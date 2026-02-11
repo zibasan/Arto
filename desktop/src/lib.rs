@@ -12,7 +12,7 @@ mod menu;
 mod pinned_search;
 mod state;
 mod theme;
-mod utils;
+pub mod utils;
 mod watcher;
 mod window;
 

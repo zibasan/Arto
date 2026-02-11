@@ -22,7 +22,9 @@ static CLIPBOARD: LazyLock<Mutex<Clipboard>> =
 ///
 /// # Examples
 ///
-/// ```rust,ignore
+/// ```no_run
+/// use arto::utils::clipboard::copy_text;
+///
 /// copy_text("Hello, world!");
 /// ```
 pub fn copy_text(text: impl AsRef<str>) {
@@ -38,7 +40,9 @@ pub fn copy_text(text: impl AsRef<str>) {
 ///
 /// # Examples
 ///
-/// ```rust,ignore
+/// ```no_run
+/// use arto::utils::clipboard::copy_image_from_data_url;
+///
 /// let data_url = "data:image/png;base64,iVBORw0KGgo...";
 /// copy_image_from_data_url(data_url);
 /// ```

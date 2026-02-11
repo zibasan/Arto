@@ -23,7 +23,9 @@ const REQUEST_TIMEOUT_SECS: u64 = 30;
 ///
 /// # Examples
 ///
-/// ```rust,ignore
+/// ```no_run
+/// use arto::utils::image::save_image;
+///
 /// // Data URL
 /// save_image("data:image/png;base64,iVBORw0KGgo...");
 ///
@@ -257,6 +259,18 @@ fn extract_extension_from_url(url: &str) -> Option<&str> {
 ///
 /// Expects format: `data:<mime-type>;base64,<base64-data>`
 /// Returns the MIME type portion (e.g., "image/png").
+///
+/// # Examples
+///
+/// ```no_run
+/// use arto::utils::image::extract_mime_type_from_data_url;
+///
+/// assert_eq!(
+///     extract_mime_type_from_data_url("data:image/png;base64,iVBORw0KGgo="),
+///     Some("image/png")
+/// );
+/// assert_eq!(extract_mime_type_from_data_url("not-a-data-url"), None);
+/// ```
 pub fn extract_mime_type_from_data_url(data_url: &str) -> Option<&str> {
     // data:image/png;base64,<data>
     let stripped = data_url.strip_prefix("data:")?;
@@ -267,6 +281,18 @@ pub fn extract_mime_type_from_data_url(data_url: &str) -> Option<&str> {
 /// Extract base64 data from a data URL.
 ///
 /// Expects format: `data:<mime-type>;base64,<base64-data>`
+///
+/// # Examples
+///
+/// ```no_run
+/// use arto::utils::image::extract_base64_from_data_url;
+///
+/// assert_eq!(
+///     extract_base64_from_data_url("data:image/png;base64,aGVsbG8="),
+///     Ok("aGVsbG8=")
+/// );
+/// assert!(extract_base64_from_data_url("data:image/png,hello").is_err());
+/// ```
 pub fn extract_base64_from_data_url(data_url: &str) -> Result<&str, &'static str> {
     // data:image/png;base64,<data>
     let Some(comma_pos) = data_url.find(',') else {
