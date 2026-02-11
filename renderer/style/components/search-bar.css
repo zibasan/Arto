@@ -144,22 +144,31 @@
 }
 
 /* Highlight styles for matches in content */
-.search-highlight {
-  background-color: color-mix(in srgb, var(--accent-bg) 30%, transparent);
+.markdown-body .search-highlight {
+  background-color: var(--search-highlight);
   border-radius: var(--radius-xs);
-  padding: 0 1px;
+  padding: 0 2px;
 }
 
-.search-highlight-active {
-  background-color: var(--accent-bg);
-  color: white;
+.markdown-body .search-highlight-active {
+  background-color: var(--search-highlight);
   border-radius: var(--radius-xs);
-  padding: 1px 2px;
-  box-shadow: var(--shadow-sm);
+  padding: 1px 3px;
+  outline: 2px solid var(--search-active-outline);
+  animation: search-active-outline 140ms ease-out;
+}
+
+@keyframes search-active-outline {
+  0% {
+    outline-color: color-mix(in srgb, var(--search-active-outline) 0%, transparent);
+  }
+  100% {
+    outline-color: var(--search-active-outline);
+  }
 }
 
 /* Pinned search highlights (5 colors, no yellow) */
-.pinned-highlight {
+.markdown-body .pinned-highlight {
   border-radius: var(--radius-xs);
   padding: 0 1px;
 }

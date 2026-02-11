@@ -139,6 +139,15 @@ pub fn SearchBar() -> Element {
         }
     }));
 
+    // Ensure the input does not keep focus after closing the search bar
+    use_effect(use_reactive!(|is_open| {
+        if !is_open {
+            spawn(async move {
+                let _ = document::eval("document.querySelector('.search-input')?.blur();").await;
+            });
+        }
+    }));
+
     rsx! {
         div {
             class: if is_open { "search-bar search-bar--open" } else { "search-bar" },

@@ -126,7 +126,7 @@
 /* Pinned match highlight colors */
 .right-sidebar-pinned-highlight {
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--text-color);
   padding: 0 2px;
   border-radius: var(--radius-xs);
 }

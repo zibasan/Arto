@@ -65,7 +65,7 @@
 
 .right-sidebar-search-item.current {
   background: color-mix(in srgb, var(--accent-bg) 10%, transparent);
-  color: var(--text-primary);
+  color: var(--text-color);
 }
 
 .right-sidebar-search-context {
@@ -75,7 +75,7 @@
 .right-sidebar-search-highlight {
   background: var(--search-highlight);
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--text-color);
   padding: 0 2px;
   border-radius: var(--radius-xs);
 }

@@ -54,9 +54,12 @@
   --warning-color: #dc8a2f;
 
   /* Search Highlight */
-  --light-search-highlight: rgba(255, 235, 59, 0.4);
-  --dark-search-highlight: rgba(255, 235, 59, 0.3);
+  --light-search-highlight: rgba(255, 214, 10, 0.38);
+  --dark-search-highlight: rgba(245, 191, 45, 0.55);
   --search-highlight: var(--light-search-highlight);
+  --light-search-active-outline: rgba(9, 105, 218, 0.45);
+  --dark-search-active-outline: rgba(80, 190, 255, 0.7);
+  --search-active-outline: var(--light-search-active-outline);
 
   /* ========================================
      Theme Colors
@@ -106,18 +109,18 @@
   --dark-copy-button-success-fg: #4ac26b;
   --dark-copy-button-error-bg: #490202;
   --dark-copy-button-error-fg: #ff7b72;
-  /* Pinned highlight colors - Light theme (lower opacity for white bg) */
-  --light-pinned-green: rgba(76, 175, 80, 0.35);
-  --light-pinned-blue: rgba(0, 188, 212, 0.35);
-  --light-pinned-pink: rgba(233, 30, 99, 0.3);
-  --light-pinned-orange: rgba(255, 152, 0, 0.35);
-  --light-pinned-purple: rgba(156, 39, 176, 0.3);
-  /* Pinned highlight colors - Dark theme (higher opacity + brighter for dark bg) */
-  --dark-pinned-green: rgba(102, 187, 106, 0.45);
-  --dark-pinned-blue: rgba(77, 208, 225, 0.45);
-  --dark-pinned-pink: rgba(240, 98, 146, 0.4);
-  --dark-pinned-orange: rgba(255, 183, 77, 0.45);
-  --dark-pinned-purple: rgba(186, 104, 200, 0.4);
+  /* Pinned highlight colors - Light theme */
+  --light-pinned-green: rgba(76, 175, 80, 0.28);
+  --light-pinned-blue: rgba(0, 188, 212, 0.28);
+  --light-pinned-pink: rgba(233, 30, 99, 0.24);
+  --light-pinned-orange: rgba(200, 85, 0, 0.36);
+  --light-pinned-purple: rgba(156, 39, 176, 0.24);
+  /* Pinned highlight colors - Dark theme */
+  --dark-pinned-green: rgba(97, 189, 113, 0.45);
+  --dark-pinned-blue: rgba(82, 205, 224, 0.45);
+  --dark-pinned-pink: rgba(239, 113, 161, 0.4);
+  --dark-pinned-orange: rgba(200, 110, 30, 0.58);
+  --dark-pinned-purple: rgba(192, 118, 207, 0.4);
   /* Scrollbar colors */
   --light-scrollbar-track: #f6f8fa;
   --light-scrollbar-thumb: #d1d9e0;
@@ -220,6 +223,7 @@
   --pinned-orange: var(--dark-pinned-orange);
   --pinned-purple: var(--dark-pinned-purple);
   --search-highlight: var(--dark-search-highlight);
+  --search-active-outline: var(--dark-search-active-outline);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -254,5 +258,6 @@
     --pinned-orange: var(--dark-pinned-orange);
     --pinned-purple: var(--dark-pinned-purple);
     --search-highlight: var(--dark-search-highlight);
+    --search-active-outline: var(--dark-search-active-outline);
   }
 }
