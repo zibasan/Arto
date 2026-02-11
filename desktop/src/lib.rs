@@ -91,13 +91,13 @@ pub fn run(paths: Vec<PathBuf>) -> RunResult {
                         }
                     }
                     // Process immediately (we're on the main thread)
-                    ipc::process_pending_events();
+                    ipc::process_main_thread_tasks();
                 }
                 Event::Reopen { .. } => {
                     // Handle dock click / app activation
                     tracing::debug!("Event::Reopen received (dock click or app activation)");
                     ipc::push_event(ipc::OpenEvent::Reopen);
-                    ipc::process_pending_events();
+                    ipc::process_main_thread_tasks();
                 }
                 Event::WindowEvent {
                     event: WindowEvent::Focused(true),
@@ -119,7 +119,7 @@ pub fn run(paths: Vec<PathBuf>) -> RunResult {
                     // so this branch is effectively redundant. It exists as a fallback for
                     // future cross-platform support where wake_main_thread() may not have
                     // a fully reliable platform-specific implementation (e.g., Linux/Windows).
-                    ipc::process_pending_events();
+                    ipc::process_main_thread_tasks();
                 }
                 _ => {}
             }

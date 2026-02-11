@@ -35,6 +35,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::mpsc;
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
@@ -67,9 +68,58 @@ pub enum OpenEvent {
 /// The main thread drains them via `process_pending_events()`, which is called
 /// from the GCD wake callback or the custom_event_handler.
 static IPC_EVENT_QUEUE: OnceLock<Mutex<VecDeque<OpenEvent>>> = OnceLock::new();
+static SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
+static SHUTDOWN_STARTED: AtomicBool = AtomicBool::new(false);
+static SHUTDOWN_SIGNAL: AtomicI32 = AtomicI32::new(0);
 
 fn get_event_queue() -> &'static Mutex<VecDeque<OpenEvent>> {
     IPC_EVENT_QUEUE.get_or_init(|| Mutex::new(VecDeque::new()))
+}
+
+fn request_shutdown(signal: i32) {
+    let was_requested = SHUTDOWN_REQUESTED.swap(true, Ordering::SeqCst);
+    if was_requested {
+        tracing::warn!(
+            signal,
+            "Second termination signal received during shutdown; forcing immediate exit"
+        );
+        cleanup_socket();
+        std::process::exit(128 + signal);
+    }
+    SHUTDOWN_SIGNAL.store(signal, Ordering::SeqCst);
+
+    tracing::info!(
+        signal,
+        "Termination signal received; requesting graceful shutdown"
+    );
+    wake_main_thread();
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        // Non-macOS fallback: if the event loop does not begin shutdown for a
+        // long time, force exit as a last resort.
+        const SHUTDOWN_START_TIMEOUT: Duration = Duration::from_secs(5);
+        const SHUTDOWN_POLL_INTERVAL: Duration = Duration::from_millis(50);
+        std::thread::spawn(move || {
+            let start = std::time::Instant::now();
+            while start.elapsed() < SHUTDOWN_START_TIMEOUT {
+                if SHUTDOWN_STARTED.load(Ordering::SeqCst) {
+                    return;
+                }
+                std::thread::sleep(SHUTDOWN_POLL_INTERVAL);
+            }
+
+            if SHUTDOWN_REQUESTED.load(Ordering::SeqCst) && !SHUTDOWN_STARTED.load(Ordering::SeqCst)
+            {
+                tracing::warn!(
+                    signal,
+                    "Main thread did not start graceful shutdown in time; forcing exit"
+                );
+                cleanup_socket();
+                std::process::exit(128 + signal);
+            }
+        });
+    }
 }
 
 /// Push an event to the IPC queue. Thread-safe.
@@ -112,6 +162,43 @@ pub fn process_pending_events() {
     let events = drain_events();
     for event in events {
         handle_event_on_main_thread(&desktop, event);
+    }
+}
+
+/// Process all main-thread IPC tasks.
+///
+/// This drains the open-event queue and handles pending graceful shutdown.
+pub fn process_main_thread_tasks() {
+    if SHUTDOWN_REQUESTED.load(Ordering::SeqCst) {
+        process_shutdown_request();
+        return;
+    }
+
+    process_pending_events();
+    process_shutdown_request();
+}
+
+fn process_shutdown_request() {
+    if !SHUTDOWN_REQUESTED.load(Ordering::SeqCst) {
+        return;
+    }
+    if SHUTDOWN_STARTED.swap(true, Ordering::SeqCst) {
+        return;
+    }
+
+    tracing::info!("Starting graceful shutdown");
+    cleanup_socket();
+    let closed = crate::window::shutdown_all_windows();
+    if closed == 0 {
+        let signal = SHUTDOWN_SIGNAL.load(Ordering::SeqCst);
+        tracing::warn!(
+            signal,
+            "No main windows found during shutdown; exiting process directly"
+        );
+        if signal > 0 {
+            std::process::exit(128 + signal);
+        }
+        std::process::exit(0);
     }
 }
 
@@ -160,7 +247,7 @@ fn handle_event_on_main_thread(
 ///
 /// Uses macOS GCD to dispatch a callback to the main queue, which wakes
 /// CFRunLoop even when App Nap has suspended the process. The callback
-/// calls `process_pending_events()` on the main thread.
+/// calls `process_main_thread_tasks()` on the main thread.
 #[cfg(target_os = "macos")]
 fn wake_main_thread() {
     extern "C" {
@@ -177,7 +264,7 @@ fn wake_main_thread() {
 
     extern "C" fn ipc_wake_callback(_context: *mut std::ffi::c_void) {
         // Runs on the main thread via GCD — safe to access MAIN_WINDOWS thread_local
-        process_pending_events();
+        process_main_thread_tasks();
     }
 
     // SAFETY: _dispatch_main_q is a valid static symbol in libdispatch.
@@ -190,8 +277,8 @@ fn wake_main_thread() {
 
 #[cfg(not(target_os = "macos"))]
 fn wake_main_thread() {
-    // On non-macOS platforms, rely on custom_event_handler to drain the IPC queue.
-    // Events will be processed on the next event loop iteration.
+    // On non-macOS platforms, rely on custom_event_handler to run
+    // process_main_thread_tasks() on the next event loop iteration.
 }
 
 /// Socket name for IPC communication.
@@ -587,14 +674,13 @@ fn register_cleanup_handler() {
         match Signals::new([SIGINT, SIGTERM]) {
             Ok(mut signals) => {
                 // Spawn a dedicated thread to listen for termination signals and
-                // perform IPC socket cleanup when they are received. This approach
+                // request graceful shutdown when they are received. This approach
                 // allows multiple independent signal handlers to coexist.
                 thread::spawn(move || {
                     for signal in &mut signals {
                         match signal {
                             SIGINT | SIGTERM => {
-                                cleanup_socket();
-                                break;
+                                request_shutdown(signal);
                             }
                             _ => {}
                         }

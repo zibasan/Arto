@@ -1,6 +1,8 @@
 use dioxus::desktop::tao::dpi::{LogicalPosition, LogicalSize};
 use dioxus::desktop::tao::window::WindowId;
-use dioxus::desktop::{window, Config, DesktopService, WeakDesktopContext, WindowBuilder};
+use dioxus::desktop::{
+    window, Config, DesktopService, WeakDesktopContext, WindowBuilder, WindowCloseBehaviour,
+};
 use dioxus::prelude::*;
 
 use std::cell::RefCell;
@@ -203,6 +205,23 @@ pub fn close_all_main_windows() {
     // so close() hides it instead of destroying it. Clearing would make
     // get_main_app_window() panic and break IPC window creation.
     // Dead entries are pruned naturally by register_main_window().
+}
+
+/// Shutdown all app windows and allow the event loop to exit.
+///
+/// This is intended for app-level termination (e.g. SIGINT/SIGTERM). It differs
+/// from `close_all_main_windows()` by forcing all main windows to use
+/// `WindowCloseBehaviour::WindowCloses` so the hidden MainApp window is actually
+/// destroyed and the process can exit on last window close.
+pub fn shutdown_all_windows() -> usize {
+    super::child::close_all_child_windows();
+
+    let windows = list_main_windows();
+    windows.iter().for_each(|w| {
+        w.set_close_behavior(WindowCloseBehaviour::WindowCloses);
+        w.close();
+    });
+    windows.len()
 }
 
 // ============================================================================

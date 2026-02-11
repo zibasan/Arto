@@ -94,6 +94,18 @@ pub fn close_child_windows_for_last_focused() {
     }
 }
 
+pub fn close_all_child_windows() {
+    CHILD_WINDOWS.with(|windows| {
+        windows.borrow_mut().retain(|_, state| match state {
+            ChildWindowState::Pending { .. } => true,
+            ChildWindowState::Created(entry) => {
+                entry.close();
+                false
+            }
+        });
+    });
+}
+
 pub fn open_or_focus_mermaid_window(source: String, theme: Theme) {
     let diagram_id = generate_diagram_id(&source);
     let parent_id = window().id();
@@ -146,15 +158,24 @@ async fn create_and_register_mermaid_window(
 
     let pending = window().new_window(dom, config);
     let ctx = pending.await;
-    let weak_handle = std::rc::Rc::downgrade(&ctx);
-    let window_id = ctx.window.id();
+    let should_register = CHILD_WINDOWS.with(|windows| {
+        let windows = windows.borrow();
+        windows
+            .get(&diagram_id)
+            .is_some_and(|state| matches!(state, ChildWindowState::Pending { .. }))
+    });
+
+    if !should_register {
+        ctx.close();
+        return;
+    }
 
     CHILD_WINDOWS.with(|windows| {
         windows.borrow_mut().insert(
             diagram_id,
             ChildWindowState::Created(ChildWindowEntry {
-                handle: weak_handle,
-                window_id,
+                handle: std::rc::Rc::downgrade(&ctx),
+                window_id: ctx.window.id(),
                 parent_id,
             }),
         );
