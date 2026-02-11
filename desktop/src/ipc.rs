@@ -30,6 +30,8 @@
 //! {"type":"reopen"}
 //! ```
 
+use dioxus::desktop::tao::dpi::{LogicalPosition, LogicalSize};
+use dioxus::desktop::tao::window::WindowId;
 use interprocess::local_socket::{prelude::*, GenericFilePath, ListenerOptions, Stream, ToFsName};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
@@ -210,33 +212,187 @@ fn handle_event_on_main_thread(
     match event {
         OpenEvent::File(path) => {
             tracing::debug!(?path, "Processing file open event");
-            crate::window::create_main_window_sync(
-                desktop,
-                crate::state::Tab::new(path),
-                crate::window::CreateMainWindowConfigParams::default(),
-            );
+            open_file_with_behavior(desktop, path);
         }
         OpenEvent::Directory(dir) => {
             tracing::debug!(?dir, "Processing directory open event");
-            let params = crate::window::CreateMainWindowConfigParams {
-                directory: Some(dir),
-                ..Default::default()
-            };
-            crate::window::create_main_window_sync(desktop, crate::state::Tab::default(), params);
+            open_directory_with_behavior(desktop, dir);
         }
         OpenEvent::Reopen => {
             tracing::debug!("Processing reopen event");
-            if crate::window::is_main_app_window_visible() {
-                crate::window::create_main_window_sync(
-                    desktop,
-                    crate::state::Tab::default(),
-                    crate::window::CreateMainWindowConfigParams::default(),
-                );
-            } else {
-                crate::window::show_main_app_window();
-            }
+            reopen_with_behavior(desktop);
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OpenTarget<T> {
+    ExistingWindow(T),
+    NewWindow,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct WindowSelectionInput<T> {
+    window_id: T,
+    is_on_current_screen: bool,
+}
+
+fn choose_open_target<T: Copy + Eq>(
+    behavior: crate::config::FileOpenBehavior,
+    visible_windows: &[WindowSelectionInput<T>],
+    last_focused: Option<T>,
+) -> OpenTarget<T> {
+    match behavior {
+        crate::config::FileOpenBehavior::NewWindow => OpenTarget::NewWindow,
+        crate::config::FileOpenBehavior::LastFocused => match last_focused {
+            Some(window_id)
+                if visible_windows
+                    .iter()
+                    .any(|window| window.window_id == window_id) =>
+            {
+                OpenTarget::ExistingWindow(window_id)
+            }
+            _ => OpenTarget::NewWindow,
+        },
+        crate::config::FileOpenBehavior::CurrentScreen => {
+            let current_screen_windows: Vec<T> = visible_windows
+                .iter()
+                .filter(|window| window.is_on_current_screen)
+                .map(|window| window.window_id)
+                .collect();
+
+            if current_screen_windows.is_empty() {
+                return OpenTarget::NewWindow;
+            }
+
+            if let Some(window_id) = last_focused {
+                if current_screen_windows.contains(&window_id) {
+                    return OpenTarget::ExistingWindow(window_id);
+                }
+            }
+
+            OpenTarget::ExistingWindow(current_screen_windows[0])
+        }
+    }
+}
+
+fn open_file_with_behavior(desktop: &std::rc::Rc<dioxus::desktop::DesktopService>, path: PathBuf) {
+    if let Some(window_id) = select_target_window() {
+        if let Some(mut state) = crate::window::main::get_window_state(window_id) {
+            state.open_file(&path);
+            let _ = crate::window::main::focus_window(window_id);
+            return;
+        }
+    }
+
+    crate::window::create_main_window_sync(
+        desktop,
+        crate::state::Tab::new(path),
+        crate::window::CreateMainWindowConfigParams::default(),
+    );
+}
+
+fn open_directory_with_behavior(
+    desktop: &std::rc::Rc<dioxus::desktop::DesktopService>,
+    directory: PathBuf,
+) {
+    if let Some(window_id) = select_target_window() {
+        if let Some(mut state) = crate::window::main::get_window_state(window_id) {
+            state.set_root_directory(directory.clone());
+            let _ = crate::window::main::focus_window(window_id);
+            return;
+        }
+    }
+
+    let params = crate::window::CreateMainWindowConfigParams {
+        directory: Some(directory),
+        ..Default::default()
+    };
+    crate::window::create_main_window_sync(desktop, crate::state::Tab::default(), params);
+}
+
+fn reopen_with_behavior(desktop: &std::rc::Rc<dioxus::desktop::DesktopService>) {
+    // First try to focus an existing visible window
+    if let Some(window_id) = select_target_window() {
+        if crate::window::main::focus_window(window_id) {
+            return;
+        }
+    }
+
+    // If no visible windows, try to show and focus a hidden window (e.g., MainApp with WindowHides)
+    if crate::window::main::show_and_focus_hidden_window() {
+        return;
+    }
+
+    // If no windows at all, create a new one
+    crate::window::create_main_window_sync(
+        desktop,
+        crate::state::Tab::default(),
+        crate::window::CreateMainWindowConfigParams::default(),
+    );
+}
+
+fn select_target_window() -> Option<WindowId> {
+    let behavior = crate::config::CONFIG.read().file_open;
+    let cursor_display_bounds = crate::utils::screen::get_current_display_bounds();
+    let visible_windows: Vec<WindowSelectionInput<WindowId>> =
+        collect_visible_window_selection_inputs(cursor_display_bounds);
+    let last_focused = crate::window::main::get_last_focused_window();
+
+    match choose_open_target(behavior, &visible_windows, last_focused) {
+        OpenTarget::ExistingWindow(window_id) => Some(window_id),
+        OpenTarget::NewWindow => None,
+    }
+}
+
+fn collect_visible_window_selection_inputs(
+    current_display_bounds: Option<(LogicalPosition<i32>, LogicalSize<u32>)>,
+) -> Vec<WindowSelectionInput<WindowId>> {
+    crate::window::main::list_visible_main_windows()
+        .into_iter()
+        .map(|ctx| {
+            let scale_factor = ctx.window.scale_factor();
+            // Use consistent outer bounds (outer_position + outer_size) for display overlap detection
+            let window_position = ctx
+                .window
+                .outer_position()
+                .map(|p| LogicalPosition::from_physical(p, scale_factor))
+                .unwrap_or_else(|_| {
+                    let metrics = crate::window::metrics::capture_window_metrics(&ctx.window);
+                    LogicalPosition::new(metrics.position.x, metrics.position.y)
+                });
+            let window_size = ctx.window.outer_size().to_logical(scale_factor);
+            let is_on_current_screen = current_display_bounds
+                .map(|display| is_window_on_display(display, window_position, window_size))
+                .unwrap_or(false);
+            WindowSelectionInput {
+                window_id: ctx.window.id(),
+                is_on_current_screen,
+            }
+        })
+        .collect()
+}
+
+fn is_window_on_display(
+    display_bounds: (LogicalPosition<i32>, LogicalSize<u32>),
+    window_position: LogicalPosition<i32>,
+    window_size: LogicalSize<u32>,
+) -> bool {
+    let (display_origin, display_size) = display_bounds;
+    let display_left = display_origin.x;
+    let display_top = display_origin.y;
+    let display_right = display_left + display_size.width as i32;
+    let display_bottom = display_top + display_size.height as i32;
+
+    let window_left = window_position.x;
+    let window_top = window_position.y;
+    let window_right = window_left + window_size.width as i32;
+    let window_bottom = window_top + window_size.height as i32;
+
+    window_left < display_right
+        && display_left < window_right
+        && window_top < display_bottom
+        && display_top < window_bottom
 }
 
 // ============================================================================
@@ -891,6 +1047,7 @@ fn handle_client_connection(stream: Stream) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::FileOpenBehavior;
     use indoc::indoc;
 
     #[test]
@@ -1052,5 +1209,107 @@ mod tests {
         // Queue is empty after drain
         assert!(try_pop_first_event().is_none());
         assert!(drain_events().is_empty());
+    }
+
+    #[test]
+    fn test_choose_open_target_new_window_always_creates_new_window() {
+        let windows = vec![WindowSelectionInput {
+            window_id: 1_u8,
+            is_on_current_screen: true,
+        }];
+
+        let target = choose_open_target(FileOpenBehavior::NewWindow, &windows, Some(1));
+        assert_eq!(target, OpenTarget::NewWindow);
+    }
+
+    #[test]
+    fn test_choose_open_target_last_focused_uses_visible_window() {
+        let windows = vec![
+            WindowSelectionInput {
+                window_id: 1_u8,
+                is_on_current_screen: false,
+            },
+            WindowSelectionInput {
+                window_id: 2_u8,
+                is_on_current_screen: true,
+            },
+        ];
+
+        let target = choose_open_target(FileOpenBehavior::LastFocused, &windows, Some(2));
+        assert_eq!(target, OpenTarget::ExistingWindow(2));
+    }
+
+    #[test]
+    fn test_choose_open_target_last_focused_falls_back_to_new_window() {
+        let windows = vec![WindowSelectionInput {
+            window_id: 1_u8,
+            is_on_current_screen: true,
+        }];
+
+        let target = choose_open_target(FileOpenBehavior::LastFocused, &windows, Some(2));
+        assert_eq!(target, OpenTarget::NewWindow);
+    }
+
+    #[test]
+    fn test_choose_open_target_current_screen_prefers_last_focused() {
+        let windows = vec![
+            WindowSelectionInput {
+                window_id: 1_u8,
+                is_on_current_screen: true,
+            },
+            WindowSelectionInput {
+                window_id: 2_u8,
+                is_on_current_screen: true,
+            },
+        ];
+
+        let target = choose_open_target(FileOpenBehavior::CurrentScreen, &windows, Some(2));
+        assert_eq!(target, OpenTarget::ExistingWindow(2));
+    }
+
+    #[test]
+    fn test_choose_open_target_current_screen_uses_first_candidate_without_last_focus() {
+        let windows = vec![
+            WindowSelectionInput {
+                window_id: 4_u8,
+                is_on_current_screen: true,
+            },
+            WindowSelectionInput {
+                window_id: 5_u8,
+                is_on_current_screen: true,
+            },
+        ];
+
+        let target = choose_open_target(FileOpenBehavior::CurrentScreen, &windows, None);
+        assert_eq!(target, OpenTarget::ExistingWindow(4));
+    }
+
+    #[test]
+    fn test_choose_open_target_current_screen_falls_back_to_new_window() {
+        let windows = vec![WindowSelectionInput {
+            window_id: 1_u8,
+            is_on_current_screen: false,
+        }];
+
+        let target = choose_open_target(FileOpenBehavior::CurrentScreen, &windows, Some(1));
+        assert_eq!(target, OpenTarget::NewWindow);
+    }
+
+    #[test]
+    fn test_is_window_on_display_detects_overlap() {
+        let display = (LogicalPosition::new(0, 0), LogicalSize::new(1920, 1080));
+        let window_position = LogicalPosition::new(1800, 900);
+        let window_size = LogicalSize::new(400, 300);
+
+        assert!(is_window_on_display(display, window_position, window_size));
+    }
+
+    #[test]
+    fn test_is_window_on_display_returns_false_without_overlap() {
+        let display = (LogicalPosition::new(0, 0), LogicalSize::new(1920, 1080));
+        let window_position = LogicalPosition::new(1921, 0);
+        let window_size = LogicalSize::new(400, 300);
+
+        assert!(!is_window_on_display(display, window_position, window_size));
     }
 }
