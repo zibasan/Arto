@@ -266,6 +266,8 @@ export function find(query: string): void {
     return;
   }
 
+  // Ensure search highlights take priority over pinned highlights
+  clearPinnedHighlights();
   const count = highlightMatches(container as HTMLElement, query);
   state.currentIndex = count > 0 ? 0 : -1;
 
@@ -273,6 +275,9 @@ export function find(query: string): void {
   if (count > 0) {
     state.highlightElements[0]?.classList.add("search-highlight-active");
   }
+
+  // Re-apply pinned highlights after search so search wins on overlap
+  applyPinnedHighlights();
 
   const matches = collectSearchMatches();
   const pinnedMatches = collectPinnedMatches();
@@ -308,17 +313,16 @@ export function setup(cb: SearchCallback): void {
  * This preserves highlights across tab navigation.
  */
 export function reapply(): void {
-  // Re-apply pinned highlights first
-  applyPinnedHighlights();
-
-  // Then re-apply search if there's a query
+  // Re-apply search first so it wins on overlap
   if (state.query) {
     find(state.query);
-  } else {
-    // Just notify with pinned matches
-    const pinnedMatches = collectPinnedMatches();
-    callback?.({ count: 0, current: 0, query: "", matches: [], pinnedMatches });
+    return;
   }
+
+  // No search query; just re-apply pinned highlights
+  applyPinnedHighlights();
+  const pinnedMatches = collectPinnedMatches();
+  callback?.({ count: 0, current: 0, query: "", matches: [], pinnedMatches });
 }
 
 /**
@@ -358,9 +362,14 @@ export function navigateTo(index: number): void {
  */
 export function setPinned(pinned: PinnedSearchDef[]): void {
   state.pinnedSearches = pinned;
-  applyPinnedHighlights();
 
-  // Notify with updated matches
+  // Keep search highlights prioritized if a query is active
+  if (state.query) {
+    find(state.query);
+    return;
+  }
+
+  applyPinnedHighlights();
   const pinnedMatches = collectPinnedMatches();
   callback?.({
     count: state.highlightElements.length,
