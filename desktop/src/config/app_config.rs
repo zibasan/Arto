@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 mod behavior;
 mod directory_config;
+mod file_open_behavior;
 mod right_sidebar_config;
 mod sidebar_config;
 mod theme_config;
@@ -12,6 +13,7 @@ mod zoom_config;
 
 pub use behavior::{NewWindowBehavior, StartupBehavior};
 pub use directory_config::DirectoryConfig;
+pub use file_open_behavior::FileOpenBehavior;
 pub use right_sidebar_config::{RightSidebarConfig, DEFAULT_RIGHT_SIDEBAR_WIDTH};
 pub use sidebar_config::{normalize_zoom_level, SidebarConfig};
 pub use theme_config::ThemeConfig;
@@ -27,6 +29,7 @@ pub use zoom_config::ZoomConfig;
 #[serde(rename_all = "camelCase", default)]
 pub struct Config {
     pub directory: DirectoryConfig,
+    pub file_open: FileOpenBehavior,
     pub theme: ThemeConfig,
     pub sidebar: SidebarConfig,
     pub right_sidebar: RightSidebarConfig,
@@ -50,6 +53,7 @@ mod tests {
         assert_eq!(config.theme.default_theme, Theme::Auto);
         assert_eq!(config.theme.on_startup, StartupBehavior::Default);
         assert_eq!(config.theme.on_new_window, NewWindowBehavior::Default);
+        assert_eq!(config.file_open, FileOpenBehavior::LastFocused);
 
         // Directory defaults
         assert_eq!(config.directory.default_directory, None);
@@ -125,6 +129,7 @@ mod tests {
                 on_startup: StartupBehavior::LastClosed,
                 on_new_window: NewWindowBehavior::LastFocused,
             },
+            file_open: FileOpenBehavior::CurrentScreen,
             directory: DirectoryConfig {
                 default_directory: Some(PathBuf::from("/home/user")),
                 on_startup: StartupBehavior::Default,
@@ -188,6 +193,7 @@ mod tests {
 
         assert_eq!(parsed.theme.default_theme, Theme::Dark);
         assert_eq!(parsed.theme.on_startup, StartupBehavior::LastClosed);
+        assert_eq!(parsed.file_open, FileOpenBehavior::CurrentScreen);
         assert_eq!(
             parsed.directory.default_directory,
             Some(PathBuf::from("/home/user"))
@@ -231,5 +237,16 @@ mod tests {
         // Sidebar zoom defaults
         assert_eq!(parsed.sidebar.default_zoom_level, 1.0);
         assert_eq!(parsed.right_sidebar.default_zoom_level, 1.0);
+        assert_eq!(parsed.file_open, FileOpenBehavior::LastFocused);
+    }
+
+    #[test]
+    fn test_config_file_open_deserialization() {
+        let last_focused: Config = serde_json::from_str(r#"{"fileOpen":"last_focused"}"#).unwrap();
+        assert_eq!(last_focused.file_open, FileOpenBehavior::LastFocused);
+
+        let current_screen: Config =
+            serde_json::from_str(r#"{"fileOpen":"current_screen"}"#).unwrap();
+        assert_eq!(current_screen.file_open, FileOpenBehavior::CurrentScreen);
     }
 }

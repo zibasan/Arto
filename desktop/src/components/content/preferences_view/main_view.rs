@@ -1,7 +1,7 @@
 use super::tabs::{
-    about_tab::AboutTab, directory_tab::DirectoryTab, right_sidebar_tab::RightSidebarTab,
-    sidebar_tab::SidebarTab, theme_tab::ThemeTab, window_position_tab::WindowPositionTab,
-    window_size_tab::WindowSizeTab,
+    about_tab::AboutTab, directory_tab::DirectoryTab, general_tab::GeneralTab,
+    right_sidebar_tab::RightSidebarTab, sidebar_tab::SidebarTab, theme_tab::ThemeTab,
+    window_position_tab::WindowPositionTab, window_size_tab::WindowSizeTab,
 };
 use crate::components::icon::{Icon, IconName};
 use crate::config::{Config, CONFIG};
@@ -13,12 +13,13 @@ use std::sync::LazyLock;
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
 pub enum PreferencesTab {
     #[default]
+    General,
     Theme,
-    WindowPosition,
+    Directory,
     WindowSize,
+    WindowPosition,
     Sidebar,
     RightSidebar,
-    Directory,
     About,
 }
 
@@ -88,6 +89,15 @@ pub fn PreferencesView() -> Element {
                 nav {
                     class: "preferences-nav",
                     button {
+                        class: if current_tab == PreferencesTab::General { "nav-tab active" } else { "nav-tab" },
+                        onclick: move |_| {
+                            active_tab.set(PreferencesTab::General);
+                            *LAST_PREFERENCES_TAB.write() = PreferencesTab::General;
+                        },
+                        Icon { name: IconName::Gear, size: 18 }
+                        span { "General" }
+                    }
+                    button {
                         class: if current_tab == PreferencesTab::Theme { "nav-tab active" } else { "nav-tab" },
                         onclick: move |_| {
                             active_tab.set(PreferencesTab::Theme);
@@ -97,13 +107,13 @@ pub fn PreferencesView() -> Element {
                         span { "Theme" }
                     }
                     button {
-                        class: if current_tab == PreferencesTab::WindowPosition { "nav-tab active" } else { "nav-tab" },
+                        class: if current_tab == PreferencesTab::Directory { "nav-tab active" } else { "nav-tab" },
                         onclick: move |_| {
-                            active_tab.set(PreferencesTab::WindowPosition);
-                            *LAST_PREFERENCES_TAB.write() = PreferencesTab::WindowPosition;
+                            active_tab.set(PreferencesTab::Directory);
+                            *LAST_PREFERENCES_TAB.write() = PreferencesTab::Directory;
                         },
-                        Icon { name: IconName::ArrowsMove, size: 18 }
-                        span { "Window Position" }
+                        Icon { name: IconName::Folder, size: 18 }
+                        span { "Directory" }
                     }
                     button {
                         class: if current_tab == PreferencesTab::WindowSize { "nav-tab active" } else { "nav-tab" },
@@ -113,6 +123,15 @@ pub fn PreferencesView() -> Element {
                         },
                         Icon { name: IconName::ArrowsDiagonal, size: 18 }
                         span { "Window Size" }
+                    }
+                    button {
+                        class: if current_tab == PreferencesTab::WindowPosition { "nav-tab active" } else { "nav-tab" },
+                        onclick: move |_| {
+                            active_tab.set(PreferencesTab::WindowPosition);
+                            *LAST_PREFERENCES_TAB.write() = PreferencesTab::WindowPosition;
+                        },
+                        Icon { name: IconName::ArrowsMove, size: 18 }
+                        span { "Window Position" }
                     }
                     button {
                         class: if current_tab == PreferencesTab::Sidebar { "nav-tab active" } else { "nav-tab" },
@@ -131,15 +150,6 @@ pub fn PreferencesView() -> Element {
                         },
                         Icon { name: IconName::List, size: 18 }
                         span { "Right Sidebar" }
-                    }
-                    button {
-                        class: if current_tab == PreferencesTab::Directory { "nav-tab active" } else { "nav-tab" },
-                        onclick: move |_| {
-                            active_tab.set(PreferencesTab::Directory);
-                            *LAST_PREFERENCES_TAB.write() = PreferencesTab::Directory;
-                        },
-                        Icon { name: IconName::Folder, size: 18 }
-                        span { "Directory" }
                     }
 
                     // Spacer to push About to bottom
@@ -186,20 +196,33 @@ pub fn PreferencesView() -> Element {
 
                     // Tab content
                     match current_tab {
+                        PreferencesTab::General => rsx! {
+                            GeneralTab {
+                                config,
+                                has_changes,
+                            }
+                        },
                         PreferencesTab::Theme => rsx! {
                             ThemeTab {
                                 config,
                                 has_changes,
                             }
                         },
-                        PreferencesTab::WindowPosition => rsx! {
-                            WindowPositionTab {
+                        PreferencesTab::Directory => rsx! {
+                            DirectoryTab {
                                 config,
                                 has_changes,
+                                current_directory: state.sidebar.read().root_directory.clone(),
                             }
                         },
                         PreferencesTab::WindowSize => rsx! {
                             WindowSizeTab {
+                                config,
+                                has_changes,
+                            }
+                        },
+                        PreferencesTab::WindowPosition => rsx! {
+                            WindowPositionTab {
                                 config,
                                 has_changes,
                             }
@@ -216,13 +239,6 @@ pub fn PreferencesView() -> Element {
                                 config,
                                 has_changes,
                                 state,
-                            }
-                        },
-                        PreferencesTab::Directory => rsx! {
-                            DirectoryTab {
-                                config,
-                                has_changes,
-                                current_directory: state.sidebar.read().root_directory.clone(),
                             }
                         },
                         PreferencesTab::About => rsx! {

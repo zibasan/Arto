@@ -149,38 +149,6 @@ pub fn has_any_main_windows() -> bool {
     !list_visible_main_windows().is_empty()
 }
 
-/// Get the MainApp window (the first window registered).
-///
-/// MainApp is the first window launched from main.rs with WindowCloseBehaviour::WindowHides.
-/// It remains in memory even when hidden, unlike additional windows which are destroyed on close.
-///
-/// # Panics
-///
-/// Panics if MainApp is not registered or was unexpectedly dropped.
-/// This should never happen in normal operation.
-fn get_main_app_window() -> Rc<DesktopService> {
-    MAIN_WINDOWS.with(|windows| {
-        windows
-            .borrow()
-            .first()
-            .expect("MainApp window not registered")
-            .upgrade()
-            .expect("MainApp window was unexpectedly dropped")
-    })
-}
-
-/// Check if the MainApp window is currently visible.
-pub fn is_main_app_window_visible() -> bool {
-    get_main_app_window().window.is_visible()
-}
-
-/// Show and focus the MainApp window.
-pub fn show_main_app_window() {
-    let ctx = get_main_app_window();
-    ctx.window.set_visible(true);
-    ctx.window.set_focus();
-}
-
 /// Focus a specific window by its ID
 /// Returns true if the window was found and focused
 ///
@@ -198,12 +166,36 @@ pub fn focus_window(window_id: WindowId) -> bool {
         .unwrap_or(false)
 }
 
+/// Show and focus the first hidden main window (typically the MainApp window)
+///
+/// Returns true if a hidden window was found and shown, false otherwise.
+/// This is used when handling reopen events (e.g., dock clicks) to restore
+/// hidden windows instead of creating new ones.
+pub fn show_and_focus_hidden_window() -> bool {
+    let all_windows = list_main_windows();
+    let visible_window_ids: std::collections::HashSet<WindowId> = list_visible_main_windows()
+        .iter()
+        .map(|ctx| ctx.window.id())
+        .collect();
+
+    all_windows
+        .into_iter()
+        .find(|ctx| !visible_window_ids.contains(&ctx.window.id()))
+        .map(|ctx| {
+            ctx.window.set_visible(true);
+            ctx.window.set_focus();
+            update_last_focused_window(ctx.window.id());
+            true
+        })
+        .unwrap_or(false)
+}
+
 pub fn close_all_main_windows() {
     let windows = list_main_windows();
     windows.iter().for_each(|w| w.close());
-    // Do not clear MAIN_WINDOWS: MainApp uses WindowCloseBehaviour::WindowHides,
-    // so close() hides it instead of destroying it. Clearing would make
-    // get_main_app_window() panic and break IPC window creation.
+    // Do not clear MAIN_WINDOWS: the MainApp window is configured with
+    // WindowCloseBehaviour::WindowHides, so close() will typically hide it
+    // instead of destroying it, while other windows may be destroyed on close.
     // Dead entries are pruned naturally by register_main_window().
 }
 
