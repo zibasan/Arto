@@ -5,6 +5,8 @@ mod renderer
 default:
   @just --list
 
+setup: renderer::setup
+
 fmt: desktop::fmt renderer::fmt
 
 check: renderer::assets desktop::check renderer::check
