@@ -45,12 +45,7 @@ pub fn Header() -> Element {
         // Set reloading state
         is_reloading_write.set(true);
 
-        state.update_current_tab(|tab| {
-            if let Some(path) = tab.file() {
-                // Reload by reassigning the same file path
-                tab.content = crate::state::TabContent::File(path.to_owned());
-            }
-        });
+        state.reload_current_tab();
 
         // Reset reloading state after animation
         spawn(async move {

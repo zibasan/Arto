@@ -83,6 +83,10 @@ pub struct AppState {
     /// Current scroll position of the content area.
     /// Updated by scroll events, used to save position before back/forward navigation.
     pub current_scroll_position: Signal<f64>,
+    /// Reload trigger counter. Incrementing this forces FileViewer to re-read the file
+    /// from disk without going through the use_memo PartialEq gate in content.rs.
+    /// Used by manual reload (header button, tab context menu) and file watcher.
+    pub reload_trigger: Signal<usize>,
 }
 
 impl AppState {
@@ -112,6 +116,7 @@ impl AppState {
             pinned_matches: Signal::new(HashMap::new()),
             pending_scroll_position: Signal::new(None),
             current_scroll_position: Signal::new(0.0),
+            reload_trigger: Signal::new(0),
         }
     }
 }
