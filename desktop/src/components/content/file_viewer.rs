@@ -26,7 +26,6 @@ const MIDDLE_CLICK: u32 = 1;
 pub fn FileViewer(file: PathBuf) -> Element {
     let state = use_context::<AppState>();
     let html = use_signal(String::new);
-    let reload_trigger = use_signal(|| 0usize);
 
     // Get base directory for link resolution
     let base_dir = file
@@ -35,8 +34,8 @@ pub fn FileViewer(file: PathBuf) -> Element {
         .unwrap_or_else(|| PathBuf::from("."));
 
     // Setup component hooks
-    use_file_loader(file.clone(), html, reload_trigger, state);
-    use_file_watcher(file.clone(), reload_trigger, state);
+    use_file_loader(file.clone(), html, state);
+    use_file_watcher(file.clone(), state);
     use_link_click_handler(file.clone(), state);
     use_mermaid_window_handler();
     use_context_menu_handler(file.clone(), base_dir);
@@ -54,15 +53,16 @@ pub fn FileViewer(file: PathBuf) -> Element {
 }
 
 /// Hook to load and render file content
-fn use_file_loader(
-    file: PathBuf,
-    html: Signal<String>,
-    reload_trigger: Signal<usize>,
-    mut state: AppState,
-) {
-    use_effect(use_reactive!(|file, reload_trigger| {
+fn use_file_loader(file: PathBuf, html: Signal<String>, mut state: AppState) {
+    use_effect(use_reactive!(|file| {
         let mut html = html;
-        let _ = reload_trigger();
+        // Subscribe to reload_trigger via Dioxus auto-subscription so this
+        // effect re-runs when the counter changes (manual reload or file watcher).
+        // NOTE: We intentionally read() here instead of adding reload_trigger to the
+        // use_reactive!(|...|) argument list, because use_reactive! compares Signal
+        // by pointer identity — the same Signal object is always "equal" to itself,
+        // so value changes would never be detected.
+        let _ = state.reload_trigger.read();
         let file = file.clone();
 
         // Handle scroll position SYNCHRONOUSLY before spawning async task.
@@ -266,9 +266,8 @@ async fn reapply_search() {
 }
 
 /// Hook to watch file for changes and trigger reload
-fn use_file_watcher(file: PathBuf, reload_trigger: Signal<usize>, mut state: AppState) {
+fn use_file_watcher(file: PathBuf, mut state: AppState) {
     use_effect(use_reactive!(|file| {
-        let mut reload_trigger = reload_trigger;
         let file = file.clone();
 
         spawn(async move {
@@ -287,11 +286,7 @@ fn use_file_watcher(file: PathBuf, reload_trigger: Signal<usize>, mut state: App
 
             while watcher.recv().await.is_some() {
                 tracing::info!("File change detected, reloading: {:?}", file_path);
-                // Save current scroll position before reloading so it can be restored
-                // after the content re-renders (reuses the back/forward restoration mechanism)
-                let scroll = *state.current_scroll_position.read();
-                state.pending_scroll_position.set(Some(scroll));
-                reload_trigger.set(reload_trigger() + 1);
+                state.reload_current_tab();
             }
 
             if let Err(e) = FILE_WATCHER.unwatch(file_path.clone()).await {

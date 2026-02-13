@@ -500,30 +500,33 @@ impl AppState {
         }
     }
 
-    /// Reload the current tab.
-    /// For file tabs, this re-reads the file from disk.
-    /// For other tab types, this forces a re-render.
+    /// Reload the current tab's file from disk, preserving scroll position.
+    ///
+    /// Increments the `reload_trigger` counter which FileViewer subscribes to
+    /// via Dioxus auto-subscription. This bypasses the `use_memo` `PartialEq`
+    /// gate in `content.rs` that would otherwise block re-renders when the
+    /// `PathBuf` hasn't changed.
+    ///
+    /// For `TabContent::FileError` tabs, switches back to `TabContent::File`
+    /// to allow retrying the load (without pushing to history).
+    ///
+    /// No-op for non-file tabs (Preferences, Inline, NoFile, etc.).
     pub fn reload_current_tab(&mut self) {
-        // Get the current file path if it's a file tab
-        let file_path = self
-            .current_tab()
-            .and_then(|tab| tab.file().map(|p| p.to_path_buf()));
-
-        if let Some(path) = file_path {
-            // Re-navigate to the same file to force reload
+        if self.current_tab().is_some_and(|tab| tab.file().is_some()) {
+            // If current tab is FileError, switch back to File to allow retry
             self.update_current_tab(|tab| {
-                tab.navigate_to(path);
+                if let TabContent::FileError(path, _) = &tab.content {
+                    tab.content = TabContent::File(path.clone());
+                }
             });
+
+            // Save current scroll position so it can be restored after reload
+            let scroll = *self.current_scroll_position.read();
+            self.pending_scroll_position.set(Some(scroll));
+            let current = *self.reload_trigger.read();
+            self.reload_trigger.set(current + 1);
         } else {
-            // For non-file tabs, trigger a reactive update by touching the tabs signal
-            // This forces components watching the signal to re-render
-            let mut tabs = self.tabs.write();
-            let active_index = *self.active_tab.read();
-            if let Some(tab) = tabs.get_mut(active_index) {
-                // Touch the tab to trigger change detection
-                let content = tab.content.clone();
-                tab.content = content;
-            }
+            tracing::debug!("Reload requested but current tab is not a file tab");
         }
     }
 }
