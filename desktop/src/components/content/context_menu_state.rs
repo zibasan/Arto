@@ -34,7 +34,11 @@ pub fn open_context_menu(state: ContentContextMenuState) {
     *CONTENT_CONTEXT_MENU.write() = Some(state);
 }
 
-/// Close the content context menu
+/// Close the content context menu.
+///
+/// Element references are NOT cleaned up here because async rasterization
+/// tasks (Copy Image / Save Image) may still need them after menu close.
+/// Cleanup happens in `rasterize_special_block` after rasterization completes.
 pub fn close_context_menu() {
     *CONTENT_CONTEXT_MENU.write() = None;
 }
