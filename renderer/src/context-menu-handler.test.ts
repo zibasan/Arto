@@ -42,6 +42,26 @@ describe("escapeDelimitedField", () => {
   test("handles combined special characters", () => {
     expect(escapeDelimitedField('a,"b\n', ",")).toBe('"a,""b\n"');
   });
+
+  test("guards against formula injection with = prefix", () => {
+    expect(escapeDelimitedField("=SUM(A1)", ",")).toBe('"\t=SUM(A1)"');
+  });
+
+  test("guards against formula injection with + prefix", () => {
+    expect(escapeDelimitedField("+1234", ",")).toBe('"\t+1234"');
+  });
+
+  test("guards against formula injection with - prefix", () => {
+    expect(escapeDelimitedField("-1234", ",")).toBe('"\t-1234"');
+  });
+
+  test("guards against formula injection with @ prefix", () => {
+    expect(escapeDelimitedField("@mention", ",")).toBe('"\t@mention"');
+  });
+
+  test("formula guard also escapes double quotes", () => {
+    expect(escapeDelimitedField('=A1+"B"', ",")).toBe('"\t=A1+""B"""');
+  });
 });
 
 // ============================================================================

@@ -373,15 +373,29 @@ function extractTableDelimited(table: HTMLTableElement, delimiter: string): stri
 
 /**
  * Escape a field value for delimited output (CSV/TSV).
+ *
+ * In addition to RFC 4180 quoting (delimiter, quotes, newlines),
+ * fields starting with `=`, `+`, `-`, or `@` are prefixed with a tab
+ * character to prevent formula injection when pasted into spreadsheets.
  */
 function escapeDelimitedField(value: string, delimiter: string): string {
+  // Prevent spreadsheet formula injection (CSV Injection / DDE attacks).
+  // Cells starting with these characters are interpreted as formulas by
+  // Excel, Google Sheets, and LibreOffice Calc.
+  const needsFormulaGuard =
+    value.length > 0 &&
+    (value[0] === "=" || value[0] === "+" || value[0] === "-" || value[0] === "@");
+
   if (
+    needsFormulaGuard ||
     value.includes(delimiter) ||
     value.includes('"') ||
     value.includes("\n") ||
     value.includes("\r")
   ) {
-    return `"${value.replace(/"/g, '""')}"`;
+    const escaped = value.replace(/"/g, '""');
+    // Tab prefix neutralizes formula interpretation while preserving the value
+    return needsFormulaGuard ? `"\t${escaped}"` : `"${escaped}"`;
   }
   return value;
 }
