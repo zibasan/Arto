@@ -329,6 +329,10 @@ pub fn App(
                     base_dir: menu_state.base_dir.clone(),
                     source_line: menu_state.data.source_line,
                     source_line_end: menu_state.data.source_line_end,
+                    table_csv: menu_state.data.table_csv.clone(),
+                    table_tsv: menu_state.data.table_tsv.clone(),
+                    table_source_line: menu_state.data.table_source_line,
+                    table_source_line_end: menu_state.data.table_source_line_end,
                     on_close: move |_| close_context_menu(),
                 }
             }
