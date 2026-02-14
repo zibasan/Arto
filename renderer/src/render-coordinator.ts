@@ -3,6 +3,48 @@ import * as mermaidRenderer from "./mermaid-renderer";
 import * as syntaxHighlighter from "./syntax-highlighter";
 import * as codeCopy from "./code-copy";
 
+/**
+ * Setup single-click listeners for Image blocks.
+ * - Math blocks: Click handled by math-renderer during rendering
+ * - Mermaid blocks: Click handled by mermaid-renderer during rendering
+ * - Image blocks (`img`): Single-click opens Image window
+ */
+function setupSpecialBlockListeners(markdownBody: Element): void {
+  // Image single-click listener
+  markdownBody.querySelectorAll("img").forEach((img) => {
+    // Skip if already has listener
+    if (img.dataset.listenersAttached === "true") {
+      return;
+    }
+
+    // Skip images inside links to avoid conflicting with link navigation
+    if (img.closest("a")) {
+      return;
+    }
+
+    img.style.cursor = "pointer";
+    img.style.transition = "opacity 0.2s ease";
+
+    img.addEventListener("click", () => {
+      const src = img.getAttribute("src");
+      const alt = img.getAttribute("alt");
+      if (src && typeof window.handleImageWindowOpen === "function") {
+        window.handleImageWindowOpen(src, alt);
+      }
+    });
+
+    // Add hover effect
+    img.addEventListener("mouseenter", () => {
+      img.style.opacity = "0.7";
+    });
+    img.addEventListener("mouseleave", () => {
+      img.style.opacity = "1.0";
+    });
+
+    img.dataset.listenersAttached = "true";
+  });
+}
+
 class RenderCoordinator {
   #rafId: number | null = null;
   #isRendering = false;
@@ -130,6 +172,7 @@ class RenderCoordinator {
             await mermaidRenderer.renderDiagrams(markdownBody);
             // Re-add copy buttons after Mermaid re-render
             codeCopy.addCopyButtons(markdownBody);
+            setupSpecialBlockListeners(markdownBody);
           }),
         );
         console.debug("RenderCoordinator: Mermaid re-render completed");
@@ -160,6 +203,7 @@ class RenderCoordinator {
           syntaxHighlighter.highlightCodeBlocks(markdownBody);
           await mermaidRenderer.renderDiagrams(markdownBody);
           codeCopy.addCopyButtons(markdownBody);
+          setupSpecialBlockListeners(markdownBody);
         }),
       );
       console.debug("RenderCoordinator: Batch render completed");
