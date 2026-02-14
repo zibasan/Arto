@@ -111,9 +111,13 @@ fn find_source_range(
     }
 
     // Find first segment overlapping with the selection
-    let first_idx = segments.iter().position(|s| s.rendered.end > rendered_start)?;
+    let first_idx = segments
+        .iter()
+        .position(|s| s.rendered.end > rendered_start)?;
     // Find last segment overlapping with the selection
-    let last_idx = segments.iter().rposition(|s| s.rendered.start < rendered_end)?;
+    let last_idx = segments
+        .iter()
+        .rposition(|s| s.rendered.start < rendered_end)?;
 
     // Compute source start
     let src_start = if rendered_start <= segments[first_idx].rendered.start {
@@ -164,7 +168,15 @@ pub fn extract_source_selection(source: &str, selected_text: &str) -> Option<Str
     }
 
     let (rendered, segments) = build_source_map(source);
-    let rendered_start = rendered.find(selected_text)?;
+
+    // Find all occurrences of the selected text in the rendered output.
+    // If there are multiple matches the selection is ambiguous, so return
+    // None rather than incorrectly mapping an arbitrary occurrence.
+    let mut matches = rendered.match_indices(selected_text);
+    let (rendered_start, _) = matches.next()?;
+    if matches.next().is_some() {
+        return None;
+    }
     let rendered_end = rendered_start + selected_text.len();
 
     let range = find_source_range(&segments, source.len(), rendered_start, rendered_end)?;

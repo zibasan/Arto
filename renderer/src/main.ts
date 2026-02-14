@@ -18,6 +18,10 @@ declare global {
       onRenderComplete: (callback: () => void) => void;
       /** Force a render pass for any content already in the DOM */
       scheduleRender: () => void;
+      /** Rasterize an image to a PNG data URL via Canvas.
+       *  SVG images are rendered at 2x scale for Retina quality.
+       *  Raster images use 1x scale to preserve original resolution. */
+      rasterizeImage: (src: string, opaque: boolean) => Promise<string | null>;
       search: {
         setup: typeof findInPage.setup;
         find: typeof findInPage.find;
@@ -63,6 +67,52 @@ export function init(): void {
     restoreSelection,
     onRenderComplete: (callback) => renderCoordinator.onRenderComplete(callback),
     scheduleRender: () => renderCoordinator.scheduleRender(),
+    rasterizeImage: (src: string, opaque: boolean): Promise<string | null> => {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          try {
+            // SVG: 2x for Retina (vector scales perfectly)
+            // Raster: 1x to preserve original resolution
+            const isSvg = src.startsWith("data:image/svg") || src.endsWith(".svg");
+            const scale = isSvg ? 2 : 1;
+            const maxDimension = 16384;
+            // ~256 MP limit prevents excessive memory allocation
+            // (each pixel = 4 bytes RGBA, so 256M * 4 = ~1 GB max)
+            const maxPixels = 256_000_000;
+            const scaledWidth = img.naturalWidth * scale;
+            const scaledHeight = img.naturalHeight * scale;
+            if (
+              scaledWidth > maxDimension ||
+              scaledHeight > maxDimension ||
+              scaledWidth * scaledHeight > maxPixels
+            ) {
+              console.error(`Image too large to rasterize: ${scaledWidth}x${scaledHeight}`);
+              resolve(null);
+              return;
+            }
+            const canvas = document.createElement("canvas");
+            canvas.width = scaledWidth;
+            canvas.height = scaledHeight;
+            const ctx = canvas.getContext("2d")!;
+            ctx.scale(scale, scale);
+            if (opaque) {
+              const bgColor =
+                getComputedStyle(document.body).getPropertyValue("--bg-color").trim() || "#ffffff";
+              ctx.fillStyle = bgColor;
+              ctx.fillRect(0, 0, img.naturalWidth, img.naturalHeight);
+            }
+            ctx.drawImage(img, 0, 0);
+            resolve(canvas.toDataURL("image/png"));
+          } catch (e) {
+            console.error("Failed to rasterize image:", e);
+            resolve(null);
+          }
+        };
+        img.onerror = () => resolve(null);
+        img.src = src;
+      });
+    },
     search: {
       setup: findInPage.setup,
       find: findInPage.find,

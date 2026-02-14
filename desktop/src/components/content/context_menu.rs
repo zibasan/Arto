@@ -93,7 +93,11 @@ pub fn ContentContextMenu(props: ContentContextMenuProps) -> Element {
         ContentContext::Mermaid { source } | ContentContext::MathBlock { source } => {
             // The renderer sets props.source_line/source_line_end to the block's
             // line range for mermaid/math (via detectContext's block-level override)
-            (Some(source.clone()), props.source_line, props.source_line_end)
+            (
+                Some(source.clone()),
+                props.source_line,
+                props.source_line_end,
+            )
         }
         _ => (None, None, None),
     };
@@ -205,7 +209,7 @@ pub fn ContentContextMenu(props: ContentContextMenuProps) -> Element {
                 }
             }
 
-            // Copy Image (smart default)
+            // Copy Image (smart default: transparent background)
             if let Some((ref src, _)) = image_info {
                 ContextMenuItem {
                     label: "Copy Image",
@@ -214,7 +218,7 @@ pub fn ContentContextMenu(props: ContentContextMenuProps) -> Element {
                         let src = src.clone();
                         let on_close = props.on_close;
                         move |_| {
-                            crate::utils::clipboard::copy_image_from_data_url(&src);
+                            copy_image_to_clipboard(&src, false);
                             on_close.call(());
                         }
                     },
@@ -358,9 +362,21 @@ pub fn ContentContextMenu(props: ContentContextMenuProps) -> Element {
                     }
                 },
                 ContentContext::Image { src, .. } => rsx! {
-                    ImageContextItems {
-                        src: src.clone(),
-                        on_close: props.on_close,
+                    ContextMenuItem {
+                        label: "Save Image As...",
+                        icon: Some(IconName::Download),
+                        on_click: {
+                            let src = src.clone();
+                            let on_close = props.on_close;
+                            move |_| {
+                                // Run in background thread to prevent UI blocking during HTTP download
+                                let src = src.clone();
+                                std::thread::spawn(move || {
+                                    crate::utils::image::save_image(&src);
+                                });
+                                on_close.call(());
+                            }
+                        },
                     }
                 },
                 _ => rsx! {},
@@ -372,6 +388,79 @@ pub fn ContentContextMenu(props: ContentContextMenuProps) -> Element {
 // ============================================================================
 // Helper Functions
 // ============================================================================
+
+/// Copy an image to the clipboard via browser Canvas rasterization.
+///
+/// All image types (SVG, PNG, JPG, etc.) go through the browser's Canvas API.
+/// This ensures consistent rendering (especially for SVGs with `<foreignObject>`)
+/// and enables the `opaque` background option for all image types.
+///
+/// When `opaque` is true, the Canvas fills the background with the
+/// current theme color before drawing.
+fn copy_image_to_clipboard(src: &str, opaque: bool) {
+    let src = src.to_string();
+    let opaque_str = if opaque { "true" } else { "false" };
+    // Use spawn_forever so the task survives context menu unmount.
+    // The menu closes (on_close) immediately after this call, which would
+    // cancel a regular spawn task before eval.recv() completes.
+    dioxus_core::spawn_forever(async move {
+        // For HTTP URLs, download via Rust to bypass browser CORS restrictions.
+        // Cross-origin images taint the Canvas, making toDataURL() throw SecurityError.
+        let rasterize_src = if src.starts_with("http://") || src.starts_with("https://") {
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            std::thread::spawn({
+                let src = src.clone();
+                move || {
+                    let _ = tx.send(crate::utils::image::download_image_as_data_url(&src));
+                }
+            });
+            match rx.await {
+                Ok(Ok(data_url)) => data_url,
+                Ok(Err(e)) => {
+                    tracing::error!(%e, "Failed to download image for clipboard copy");
+                    return;
+                }
+                Err(_) => {
+                    tracing::error!("Image download thread was cancelled");
+                    return;
+                }
+            }
+        } else {
+            src
+        };
+
+        let Ok(src_json) = serde_json::to_string(&rasterize_src) else {
+            tracing::error!("Failed to serialize image src as JSON");
+            return;
+        };
+        let js = format!(
+            "(async () => {{ dioxus.send(await window.Arto.rasterizeImage({}, {})); }})();",
+            src_json, opaque_str
+        );
+        let mut eval = document::eval(&js);
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(15),
+            eval.recv::<Option<String>>(),
+        )
+        .await;
+        match result {
+            Ok(Ok(Some(data_url))) => {
+                std::thread::spawn(move || {
+                    crate::utils::clipboard::copy_image_from_data_url(&data_url);
+                });
+            }
+            Ok(Ok(None)) => {
+                tracing::warn!("Image rasterization returned null (image may have failed to load)");
+            }
+            Ok(Err(e)) => {
+                tracing::error!(%e, "Failed to rasterize image via Canvas");
+            }
+            Err(_) => {
+                tracing::error!("Image rasterization timed out");
+            }
+        }
+    });
+}
 
 /// Extract markdown source lines from a file and copy to clipboard.
 /// Runs file I/O on a background thread to avoid blocking the UI.
@@ -399,18 +488,14 @@ fn copy_markdown_source_selection(
     let file = file.to_path_buf();
     let selected_text = selected_text.to_string();
     std::thread::spawn(move || {
-        let Some(source) =
-            crate::utils::source_extract::extract_source_lines(&file, start, end)
+        let Some(source) = crate::utils::source_extract::extract_source_lines(&file, start, end)
         else {
             tracing::debug!(?file, start, end, "Failed to extract source lines");
             return;
         };
         // Map rendered selection back to markdown source substring
-        let text = crate::utils::source_extract::extract_source_selection(
-            &source,
-            &selected_text,
-        )
-        .unwrap_or(source);
+        let text = crate::utils::source_extract::extract_source_selection(&source, &selected_text)
+            .unwrap_or(source);
         crate::utils::clipboard::copy_text(&text);
     });
 }
@@ -806,33 +891,11 @@ fn LinkContextItems(href: String, base_dir: PathBuf, on_close: EventHandler<()>)
     }
 }
 
-#[component]
-fn ImageContextItems(src: String, on_close: EventHandler<()>) -> Element {
-    rsx! {
-        ContextMenuItem {
-            label: "Save Image As...",
-            icon: Some(IconName::Download),
-            on_click: {
-                let src = src.clone();
-                let on_close = on_close;
-                move |_| {
-                    // Run in background thread to prevent UI blocking during HTTP download
-                    let src = src.clone();
-                    std::thread::spawn(move || {
-                        crate::utils::image::save_image(&src);
-                    });
-                    on_close.call(());
-                }
-            },
-        }
-    }
-}
-
 // ============================================================================
 // Copy Image As... Submenu
 // ============================================================================
 
-/// "Copy Image As..." submenu: Image / Markdown / Path
+/// "Copy Image As..." submenu: Image / Image with Background / Markdown / Path
 #[component]
 fn CopyImageAsSubmenu(
     src: String,
@@ -850,7 +913,18 @@ fn CopyImageAsSubmenu(
                 on_click: {
                     let src = src.clone();
                     move |_| {
-                        crate::utils::clipboard::copy_image_from_data_url(&src);
+                        copy_image_to_clipboard(&src, false);
+                        on_close.call(());
+                    }
+                },
+            }
+
+            ContextMenuItem {
+                label: "Image with Background",
+                on_click: {
+                    let src = src.clone();
+                    move |_| {
+                        copy_image_to_clipboard(&src, true);
                         on_close.call(());
                     }
                 },
