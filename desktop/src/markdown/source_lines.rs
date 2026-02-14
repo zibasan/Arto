@@ -87,8 +87,8 @@ where
                 };
                 Event::Html(
                     format!(
-                        "<pre data-source-line=\"{}\" data-source-line-start=\"{}\"><code{}>",
-                        block_line, content_start, lang_class
+                        "<pre data-source-line=\"{}\" data-source-line-end=\"{}\" data-source-line-start=\"{}\"><code{}>",
+                        block_line, line_end(), content_start, lang_class
                     )
                     .into(),
                 )
@@ -281,6 +281,10 @@ mod tests {
             "Code block should be on line 1: {result}"
         );
         assert!(
+            result.contains(r#"data-source-line-end="3""#),
+            "Code block should end on line 3: {result}"
+        );
+        assert!(
             result.contains(r#"data-source-line-start="2""#),
             "Fenced content should start at line 2: {result}"
         );
@@ -291,6 +295,10 @@ mod tests {
         // Indented code block (4 spaces)
         let md = "    fn main() {}\n    let x = 1;";
         let result = render_with_source_lines(md);
+        assert!(
+            result.contains(r#"data-source-line-end="2""#),
+            "Indented code block should end on line 2: {result}"
+        );
         assert!(
             result.contains(r#"data-source-line-start="1""#),
             "Indented content should start at same line: {result}"

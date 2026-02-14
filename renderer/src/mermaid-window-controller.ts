@@ -2,14 +2,6 @@ import mermaid from "mermaid";
 import type { Theme } from "./theme";
 import { buildMermaidThemeConfig } from "./mermaid-theme";
 import { fixTextContrast } from "./mermaid-contrast";
-import {
-  createBlobPromise,
-  createCanvasFromSvg,
-  convertSvgToDataUrl,
-  findSvgElement,
-  getSvgDimensions,
-} from "./code-copy";
-
 interface ViewerState {
   scale: number;
   offsetX: number;
@@ -87,40 +79,6 @@ class MermaidWindowController {
     }
 
     console.log("Theme changed to:", theme);
-  }
-
-  /**
-   * Copy the current diagram as a PNG image to clipboard
-   * @returns true if successful, false otherwise
-   */
-  async copyAsImage(): Promise<boolean> {
-    if (!navigator.clipboard?.write) {
-      console.error("Clipboard API not available");
-      return false;
-    }
-
-    if (!this.#diagramContainer) {
-      console.error("Diagram container not found");
-      return false;
-    }
-
-    try {
-      const svg = findSvgElement(this.#diagramContainer);
-      const dimensions = getSvgDimensions(svg);
-      const canvas = createCanvasFromSvg(svg, dimensions);
-      const svgDataUrl = convertSvgToDataUrl(svg, dimensions);
-
-      // Create blob promise synchronously to preserve user gesture context
-      const blobPromise = createBlobPromise(canvas, svgDataUrl);
-
-      // Write to clipboard with promise (WebKit-compatible approach)
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": blobPromise })]);
-
-      return true;
-    } catch (error) {
-      console.error("Failed to copy diagram as image:", error);
-      return false;
-    }
   }
 
   #initializeMermaidTheme(theme: Theme): void {

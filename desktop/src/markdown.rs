@@ -468,7 +468,7 @@ mod tests {
 
         assert!(
             result.contains(
-                r#"<pre data-source-line="3" data-source-line-start="4"><code class="language-rust">"#
+                r#"<pre data-source-line="3" data-source-line-end="5" data-source-line-start="4"><code class="language-rust">"#
             ),
             "Code block should be on line 3 with content starting at line 4: {result}"
         );
@@ -488,7 +488,9 @@ mod tests {
         let result = render_to_html(markdown, &md_path).unwrap();
 
         assert!(
-            result.contains(r#"<pre data-source-line="1" data-source-line-start="2">"#),
+            result.contains(
+                r#"<pre data-source-line="1" data-source-line-end="5" data-source-line-start="2">"#
+            ),
             "Code block should start at line 1 with content at line 2: {result}"
         );
     }
@@ -663,7 +665,7 @@ mod tests {
 
         assert!(
             result.contains(
-                r#"<pre data-source-line="4" data-source-line-start="5"><code class="language-rust">"#
+                r#"<pre data-source-line="4" data-source-line-end="6" data-source-line-start="5"><code class="language-rust">"#
             ),
             "Code block after alert should be on line 4 with content at line 5: {result}"
         );

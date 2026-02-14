@@ -19,6 +19,12 @@ pub enum ContentContext {
     CodeBlock {
         content: String,
         language: Option<String>,
+        /// Block source line start (1-based, from data-source-line)
+        #[serde(default)]
+        source_line: Option<u32>,
+        /// Block source line end (1-based, from data-source-line-end)
+        #[serde(default)]
+        source_line_end: Option<u32>,
     },
     /// Mermaid diagram
     Mermaid { source: String },
@@ -43,6 +49,18 @@ pub struct ContextMenuData {
     /// Source line number at selection end position (1-based, same as source_line for single line)
     #[serde(default)]
     pub source_line_end: Option<u32>,
+    /// Table data as CSV (if right-clicked within a table)
+    #[serde(default)]
+    pub table_csv: Option<String>,
+    /// Table data as TSV (if right-clicked within a table)
+    #[serde(default)]
+    pub table_tsv: Option<String>,
+    /// Table source line start (1-based)
+    #[serde(default)]
+    pub table_source_line: Option<u32>,
+    /// Table source line end (1-based)
+    #[serde(default)]
+    pub table_source_line_end: Option<u32>,
 }
 
 #[derive(Props, Clone, PartialEq)]
@@ -55,24 +73,93 @@ pub struct ContentContextMenuProps {
     pub base_dir: PathBuf,
     pub source_line: Option<u32>,
     pub source_line_end: Option<u32>,
+    pub table_csv: Option<String>,
+    pub table_tsv: Option<String>,
+    pub table_source_line: Option<u32>,
+    pub table_source_line_end: Option<u32>,
     pub on_close: EventHandler<()>,
 }
 
 #[component]
 pub fn ContentContextMenu(props: ContentContextMenuProps) -> Element {
     // Extract copyable source from context (code blocks, mermaid, math)
-    let copy_code_source = match &props.context {
-        ContentContext::CodeBlock { content, .. } => Some(content.clone()),
+    let (copy_code_source, code_block_line, code_block_line_end) = match &props.context {
+        ContentContext::CodeBlock {
+            content,
+            source_line,
+            source_line_end,
+            ..
+        } => (Some(content.clone()), *source_line, *source_line_end),
         ContentContext::Mermaid { source } | ContentContext::MathBlock { source } => {
-            Some(source.clone())
+            // The renderer sets props.source_line/source_line_end to the block's
+            // line range for mermaid/math (via detectContext's block-level override)
+            (
+                Some(source.clone()),
+                props.source_line,
+                props.source_line_end,
+            )
         }
+        _ => (None, None, None),
+    };
+
+    // Extract image info for smart default and submenu
+    let image_info = match &props.context {
+        ContentContext::Image { src, alt } => Some((src.clone(), alt.clone())),
         _ => None,
     };
+    let is_image = image_info.is_some();
+
+    // Detect special blocks (Mermaid/Math) for image operations
+    let (is_mermaid, is_math) = match &props.context {
+        ContentContext::Mermaid { .. } => (true, false),
+        ContentContext::MathBlock { .. } => (false, true),
+        _ => (false, false),
+    };
+    let is_special_block = is_mermaid || is_math;
 
     let has_context_specific = matches!(
         props.context,
-        ContentContext::Link { .. } | ContentContext::Image { .. }
+        ContentContext::Link { .. }
+            | ContentContext::Image { .. }
+            | ContentContext::Mermaid { .. }
+            | ContentContext::MathBlock { .. }
     );
+
+    let has_table = props.table_csv.is_some();
+    let has_file = props.current_file.is_some();
+    let has_any_submenu = props.has_selection
+        || has_file
+        || copy_code_source.is_some()
+        || has_table
+        || is_image
+        || is_special_block;
+
+    // Determine smart default for Copy Path label and value
+    let (copy_path_label, copy_path_value) = match (
+        props.current_file.as_ref(),
+        props.source_line,
+        props.source_line_end,
+    ) {
+        (Some(f), Some(start), Some(end)) if start != end => {
+            let path_str = f.display().to_string();
+            (
+                format!("Copy Path with Range ({start}-{end})"),
+                Some(format!("{path_str}:{start}-{end}")),
+            )
+        }
+        (Some(f), Some(line), _) => {
+            let path_str = f.display().to_string();
+            (
+                format!("Copy Path with Line ({line})"),
+                Some(format!("{path_str}:{line}")),
+            )
+        }
+        (Some(f), None, _) => {
+            let path_str = f.display().to_string();
+            ("Copy Path".to_string(), Some(path_str))
+        }
+        (None, _, _) => ("Copy Path".to_string(), None),
+    };
 
     rsx! {
         // Backdrop to close menu on outside click
@@ -80,7 +167,9 @@ pub fn ContentContextMenu(props: ContentContextMenuProps) -> Element {
             class: "context-menu-backdrop",
             // Prevent mousedown from clearing text selection
             onmousedown: move |evt| evt.prevent_default(),
-            onclick: move |_| props.on_close.call(()),
+            onclick: move |_| {
+                props.on_close.call(());
+            },
         }
 
         // Context menu
@@ -91,7 +180,7 @@ pub fn ContentContextMenu(props: ContentContextMenuProps) -> Element {
             onmousedown: move |evt| evt.prevent_default(),
             onclick: move |evt| evt.stop_propagation(),
 
-            // === Section 1: Copy operations ===
+            // === Section 1: Smart default copy operations ===
             if props.has_selection {
                 ContextMenuItem {
                     label: "Copy",
@@ -108,7 +197,7 @@ pub fn ContentContextMenu(props: ContentContextMenuProps) -> Element {
                 }
             }
 
-            if let Some(source) = copy_code_source {
+            if let Some(source) = copy_code_source.clone() {
                 ContextMenuItem {
                     label: "Copy Code",
                     icon: Some(IconName::Copy),
@@ -122,12 +211,64 @@ pub fn ContentContextMenu(props: ContentContextMenuProps) -> Element {
                 }
             }
 
-            if props.current_file.is_some() {
-                CopyPathItems {
-                    current_file: props.current_file.clone().unwrap(),
-                    source_line: props.source_line,
-                    source_line_end: props.source_line_end,
-                    on_close: props.on_close,
+            // Copy Table (smart default: TSV)
+            if let Some(tsv) = props.table_tsv.clone() {
+                ContextMenuItem {
+                    label: "Copy Table",
+                    icon: Some(IconName::Copy),
+                    on_click: {
+                        let on_close = props.on_close;
+                        move |_| {
+                            crate::utils::clipboard::copy_text(&tsv);
+                            on_close.call(());
+                        }
+                    },
+                }
+            }
+
+            // Copy Image (smart default: transparent background)
+            if let Some((ref src, _)) = image_info {
+                ContextMenuItem {
+                    label: "Copy Image",
+                    icon: Some(IconName::Photo),
+                    on_click: {
+                        let src = src.clone();
+                        let on_close = props.on_close;
+                        move |_| {
+                            copy_image_to_clipboard(&src, false);
+                            on_close.call(());
+                        }
+                    },
+                }
+            }
+
+            // Copy Image for Mermaid/Math blocks (default: transparent)
+            if is_special_block {
+                ContextMenuItem {
+                    label: "Copy Image",
+                    icon: Some(IconName::Photo),
+                    on_click: {
+                        let on_close = props.on_close;
+                        move |_| {
+                            copy_special_block_to_clipboard(is_mermaid, false);
+                            on_close.call(());
+                        }
+                    },
+                }
+            }
+
+            // Copy Path (smart default: path / path:line / path:start-end)
+            if let Some(value) = copy_path_value.clone() {
+                ContextMenuItem {
+                    label: copy_path_label.clone(),
+                    icon: Some(IconName::Copy),
+                    on_click: {
+                        let on_close = props.on_close;
+                        move |_| {
+                            crate::utils::clipboard::copy_text(&value);
+                            on_close.call(());
+                        }
+                    },
                 }
             }
 
@@ -181,7 +322,73 @@ pub fn ContentContextMenu(props: ContentContextMenuProps) -> Element {
                 },
             }
 
-            // === Section 3: Context-specific items (link, image) ===
+            // === Section 3: Copy As... submenus ===
+            if has_any_submenu {
+                ContextMenuSeparator {}
+            }
+
+            // Copy As... (Text / Markdown)
+            if props.has_selection {
+                CopyAsSubmenu {
+                    selected_text: props.selected_text.clone(),
+                    current_file: props.current_file.clone(),
+                    source_line: props.source_line,
+                    source_line_end: props.source_line_end,
+                    on_close: props.on_close,
+                }
+            }
+
+            // Copy Path As... (Path / Path with Line / Path with Range)
+            if has_file {
+                CopyPathAsSubmenu {
+                    current_file: props.current_file.clone().unwrap(),
+                    source_line: props.source_line,
+                    source_line_end: props.source_line_end,
+                    on_close: props.on_close,
+                }
+            }
+
+            // Copy Code As... (Code / Markdown / Path with Range)
+            if let Some(code_source) = copy_code_source.clone() {
+                CopyCodeAsSubmenu {
+                    code_source,
+                    current_file: props.current_file.clone(),
+                    block_source_line: code_block_line,
+                    block_source_line_end: code_block_line_end,
+                    on_close: props.on_close,
+                }
+            }
+
+            // Copy Table As... (TSV / CSV / Markdown)
+            if has_table {
+                CopyTableAsSubmenu {
+                    table_tsv: props.table_tsv.clone(),
+                    table_csv: props.table_csv.clone(),
+                    current_file: props.current_file.clone(),
+                    table_source_line: props.table_source_line,
+                    table_source_line_end: props.table_source_line_end,
+                    on_close: props.on_close,
+                }
+            }
+
+            // Copy Image As... (Image / Markdown / Path)
+            if let Some((ref src, ref alt_text)) = image_info {
+                CopyImageAsSubmenu {
+                    src: src.clone(),
+                    alt_text: alt_text.clone(),
+                    on_close: props.on_close,
+                }
+            }
+
+            // Copy Image As... (Image / Image with Background) for special blocks
+            if is_special_block {
+                CopySpecialBlockAsSubmenu {
+                    is_mermaid,
+                    on_close: props.on_close,
+                }
+            }
+
+            // === Section 4: Context-specific items (link, image) ===
             if has_context_specific {
                 ContextMenuSeparator {}
             }
@@ -195,15 +402,174 @@ pub fn ContentContextMenu(props: ContentContextMenuProps) -> Element {
                     }
                 },
                 ContentContext::Image { src, .. } => rsx! {
-                    ImageContextItems {
-                        src: src.clone(),
-                        on_close: props.on_close,
+                    ContextMenuItem {
+                        label: "Save Image As...",
+                        icon: Some(IconName::Download),
+                        on_click: {
+                            let src = src.clone();
+                            let on_close = props.on_close;
+                            move |_| {
+                                // Run in background thread to prevent UI blocking during HTTP download
+                                let src = src.clone();
+                                std::thread::spawn(move || {
+                                    crate::utils::image::save_image(&src);
+                                });
+                                on_close.call(());
+                            }
+                        },
+                    }
+                },
+                ContentContext::Mermaid { .. } | ContentContext::MathBlock { .. } => rsx! {
+                    ContextMenuItem {
+                        label: "Save Image As...",
+                        icon: Some(IconName::Download),
+                        on_click: {
+                            let on_close = props.on_close;
+                            move |_| {
+                                save_special_block_as_image(is_mermaid);
+                                on_close.call(());
+                            }
+                        },
                     }
                 },
                 _ => rsx! {},
             }
         }
     }
+}
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/// Copy an image to the clipboard via browser Canvas rasterization.
+///
+/// All image types (SVG, PNG, JPG, etc.) go through the browser's Canvas API.
+/// This ensures consistent rendering (especially for SVGs with `<foreignObject>`)
+/// and enables the `opaque` background option for all image types.
+///
+/// When `opaque` is true, the Canvas fills the background with the
+/// current theme color before drawing.
+fn copy_image_to_clipboard(src: &str, opaque: bool) {
+    let src = src.to_string();
+    let opaque_str = if opaque { "true" } else { "false" };
+    // Use spawn_forever so the task survives context menu unmount.
+    // The menu closes (on_close) immediately after this call, which would
+    // cancel a regular spawn task before eval.recv() completes.
+    dioxus_core::spawn_forever(async move {
+        // For HTTP URLs, download via Rust to bypass browser CORS restrictions.
+        // Cross-origin images taint the Canvas, making toDataURL() throw SecurityError.
+        let rasterize_src = if src.starts_with("http://") || src.starts_with("https://") {
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            std::thread::spawn({
+                let src = src.clone();
+                move || {
+                    let _ = tx.send(crate::utils::image::download_image_as_data_url(&src));
+                }
+            });
+            match rx.await {
+                Ok(Ok(data_url)) => data_url,
+                Ok(Err(e)) => {
+                    tracing::error!(%e, "Failed to download image for clipboard copy");
+                    return;
+                }
+                Err(_) => {
+                    tracing::error!("Image download thread was cancelled");
+                    return;
+                }
+            }
+        } else {
+            src
+        };
+
+        let Ok(src_json) = serde_json::to_string(&rasterize_src) else {
+            tracing::error!("Failed to serialize image src as JSON");
+            return;
+        };
+        let js = format!(
+            "(async () => {{ dioxus.send(await window.Arto.rasterizeImage({}, {})); }})();",
+            src_json, opaque_str
+        );
+        let mut eval = document::eval(&js);
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(15),
+            eval.recv::<Option<String>>(),
+        )
+        .await;
+        match result {
+            Ok(Ok(Some(data_url))) => {
+                std::thread::spawn(move || {
+                    crate::utils::clipboard::copy_image_from_data_url(&data_url);
+                });
+            }
+            Ok(Ok(None)) => {
+                tracing::warn!("Image rasterization returned null (image may have failed to load)");
+            }
+            Ok(Err(e)) => {
+                tracing::error!(%e, "Failed to rasterize image via Canvas");
+            }
+            Err(_) => {
+                tracing::error!("Image rasterization timed out");
+            }
+        }
+    });
+}
+
+/// Extract markdown source lines from a file and copy to clipboard.
+/// Runs file I/O on a background thread to avoid blocking the UI.
+fn copy_markdown_source(file: &std::path::Path, start: u32, end: u32) {
+    let file = file.to_path_buf();
+    std::thread::spawn(move || {
+        match crate::utils::source_extract::extract_source_lines(&file, start, end) {
+            Some(md) => crate::utils::clipboard::copy_text(&md),
+            None => tracing::debug!(?file, start, end, "Failed to extract source lines"),
+        }
+    });
+}
+
+/// Extract markdown source for a text selection and copy to clipboard.
+///
+/// Uses source line extraction + rendered→source position mapping to find
+/// the exact markdown source substring corresponding to the user's selection.
+/// Includes surrounding formatting markers (e.g., `**bold**` not just `bold`).
+fn copy_markdown_source_selection(
+    file: &std::path::Path,
+    start: u32,
+    end: u32,
+    selected_text: &str,
+) {
+    let file = file.to_path_buf();
+    let selected_text = selected_text.to_string();
+    std::thread::spawn(move || {
+        let Some(source) = crate::utils::source_extract::extract_source_lines(&file, start, end)
+        else {
+            tracing::debug!(?file, start, end, "Failed to extract source lines");
+            return;
+        };
+        // Map rendered selection back to markdown source substring
+        let text = crate::utils::source_extract::extract_source_selection(&source, &selected_text)
+            .unwrap_or(source);
+        crate::utils::clipboard::copy_text(&text);
+    });
+}
+
+/// Build a "path:start-end" or "path:line" string from file path and line range.
+/// Returns `None` if file or either line number is unavailable.
+fn build_path_with_range(
+    file: Option<&std::path::PathBuf>,
+    start: Option<u32>,
+    end: Option<u32>,
+) -> Option<(String, u32, u32)> {
+    let f = file?;
+    let start = start?;
+    let end = end?;
+    let path_str = f.display().to_string();
+    let formatted = if start != end {
+        format!("{path_str}:{start}-{end}")
+    } else {
+        format!("{path_str}:{start}")
+    };
+    Some((formatted, start, end))
 }
 
 // ============================================================================
@@ -255,6 +621,271 @@ fn ContextMenuItem(props: ContextMenuItemProps) -> Element {
 fn ContextMenuSeparator() -> Element {
     rsx! {
         div { class: "context-menu-separator" }
+    }
+}
+
+/// A menu item that copies text to clipboard and closes the menu.
+/// Reduces boilerplate for the common "copy + close" pattern.
+#[component]
+fn CopyMenuItem(
+    #[props(into)] label: String,
+    #[props(into)] text: String,
+    on_close: EventHandler<()>,
+) -> Element {
+    rsx! {
+        ContextMenuItem {
+            label,
+            on_click: move |_| {
+                crate::utils::clipboard::copy_text(&text);
+                on_close.call(());
+            },
+        }
+    }
+}
+
+/// Reusable submenu component with hover-to-open behavior.
+#[component]
+fn ContextMenuSubmenu(label: String, children: Element) -> Element {
+    let mut show = use_signal(|| false);
+
+    rsx! {
+        div {
+            class: "context-menu-item has-submenu",
+            onmouseenter: move |_| show.set(true),
+            onmouseleave: move |_| show.set(false),
+
+            span { class: "context-menu-label", "{label}" }
+            span { class: "submenu-arrow", "›" }
+
+            if *show.read() {
+                div {
+                    class: "context-submenu",
+                    {children}
+                }
+            }
+        }
+    }
+}
+
+// ============================================================================
+// Copy As... Submenu
+// ============================================================================
+
+/// "Copy As..." submenu: Text / Markdown
+#[component]
+fn CopyAsSubmenu(
+    selected_text: String,
+    current_file: Option<PathBuf>,
+    source_line: Option<u32>,
+    source_line_end: Option<u32>,
+    on_close: EventHandler<()>,
+) -> Element {
+    // Show "Markdown" option when file and at least start line are known.
+    let has_markdown_source = current_file.is_some() && source_line.is_some();
+    let effective_end = source_line_end.or(source_line);
+
+    rsx! {
+        ContextMenuSubmenu {
+            label: "Copy As...",
+
+            CopyMenuItem { label: "Text", text: selected_text.clone(), on_close }
+
+            if has_markdown_source {
+                ContextMenuItem {
+                    label: "Markdown",
+                    on_click: {
+                        let selected_text = selected_text.clone();
+                        let current_file = current_file.clone();
+                        move |_| {
+                            // Extract the full source lines, then trim to the
+                            // selected portion so partial selections don't copy
+                            // entire lines.
+                            let file = current_file.as_ref().unwrap();
+                            let start = source_line.unwrap();
+                            let end = effective_end.unwrap();
+                            copy_markdown_source_selection(
+                                file,
+                                start,
+                                end,
+                                &selected_text,
+                            );
+                            on_close.call(());
+                        }
+                    },
+                }
+            }
+        }
+    }
+}
+
+// ============================================================================
+// Copy Path As... Submenu
+// ============================================================================
+
+/// "Copy Path As..." submenu: Path / Path with Line / Path with Range
+#[component]
+fn CopyPathAsSubmenu(
+    current_file: PathBuf,
+    source_line: Option<u32>,
+    source_line_end: Option<u32>,
+    on_close: EventHandler<()>,
+) -> Element {
+    let path_str = current_file.display().to_string();
+    let has_range =
+        source_line.is_some() && source_line_end.is_some() && source_line != source_line_end;
+
+    rsx! {
+        ContextMenuSubmenu {
+            label: "Copy Path As...",
+
+            CopyMenuItem { label: "Path", text: path_str.clone(), on_close }
+
+            if let Some(line) = source_line {
+                CopyMenuItem {
+                    label: format!("Path with Line ({line})"),
+                    text: format!("{path_str}:{line}"),
+                    on_close,
+                }
+            }
+
+            if has_range {
+                if let (Some(start), Some(end)) = (source_line, source_line_end) {
+                    CopyMenuItem {
+                        label: format!("Path with Range ({start}-{end})"),
+                        text: format!("{path_str}:{start}-{end}"),
+                        on_close,
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ============================================================================
+// Copy Table As... Submenu
+// ============================================================================
+
+/// "Copy Table As..." submenu: TSV / CSV / Path with Range / Markdown
+#[component]
+fn CopyTableAsSubmenu(
+    table_tsv: Option<String>,
+    table_csv: Option<String>,
+    current_file: Option<PathBuf>,
+    table_source_line: Option<u32>,
+    table_source_line_end: Option<u32>,
+    on_close: EventHandler<()>,
+) -> Element {
+    let has_markdown_source =
+        current_file.is_some() && table_source_line.is_some() && table_source_line_end.is_some();
+
+    let table_path_with_range = build_path_with_range(
+        current_file.as_ref(),
+        table_source_line,
+        table_source_line_end,
+    );
+
+    rsx! {
+        ContextMenuSubmenu {
+            label: "Copy Table As...",
+
+            if let Some(tsv) = table_tsv {
+                CopyMenuItem { label: "TSV", text: tsv, on_close }
+            }
+
+            if let Some(csv) = table_csv {
+                CopyMenuItem { label: "CSV", text: csv, on_close }
+            }
+
+            if has_markdown_source {
+                ContextMenuItem {
+                    label: "Markdown",
+                    on_click: {
+                        let current_file = current_file.clone();
+                        move |_| {
+                            if let (Some(file), Some(start), Some(end)) =
+                                (current_file.as_ref(), table_source_line, table_source_line_end)
+                            {
+                                copy_markdown_source(file, start, end);
+                            }
+                            on_close.call(());
+                        }
+                    },
+                }
+            }
+
+            if let Some((path_value, start, end)) = table_path_with_range.clone() {
+                CopyMenuItem {
+                    label: if start != end {
+                        format!("Path with Range ({start}-{end})")
+                    } else {
+                        format!("Path with Line ({start})")
+                    },
+                    text: path_value,
+                    on_close,
+                }
+            }
+        }
+    }
+}
+
+// ============================================================================
+// Copy Code As... Submenu
+// ============================================================================
+
+/// "Copy Code As..." submenu: Code / Markdown / Path with Range
+#[component]
+fn CopyCodeAsSubmenu(
+    code_source: String,
+    current_file: Option<PathBuf>,
+    /// Block-level source line range (for Markdown and Path with Range)
+    block_source_line: Option<u32>,
+    block_source_line_end: Option<u32>,
+    on_close: EventHandler<()>,
+) -> Element {
+    let has_markdown =
+        current_file.is_some() && block_source_line.is_some() && block_source_line_end.is_some();
+
+    let block_path_with_range = build_path_with_range(
+        current_file.as_ref(),
+        block_source_line,
+        block_source_line_end,
+    );
+
+    rsx! {
+        ContextMenuSubmenu {
+            label: "Copy Code As...",
+
+            CopyMenuItem { label: "Code", text: code_source.clone(), on_close }
+
+            if has_markdown {
+                ContextMenuItem {
+                    label: "Markdown",
+                    on_click: {
+                        let current_file = current_file.clone();
+                        move |_| {
+                            if let (Some(file), Some(start), Some(end)) =
+                                (current_file.as_ref(), block_source_line, block_source_line_end)
+                            {
+                                copy_markdown_source(file, start, end);
+                            }
+                            on_close.call(());
+                        }
+                    },
+                }
+            }
+
+            if let Some((path_value, start, end)) = block_path_with_range.clone() {
+                CopyMenuItem {
+                    label: if start != end {
+                        format!("Path with Range ({start}-{end})")
+                    } else {
+                        format!("Path with Line ({start})")
+                    },
+                    text: path_value,
+                    on_close,
+                }
+            }
+        }
     }
 }
 
@@ -313,112 +944,164 @@ fn LinkContextItems(href: String, base_dir: PathBuf, on_close: EventHandler<()>)
     }
 }
 
+// ============================================================================
+// Copy Image As... Submenu
+// ============================================================================
+
+/// "Copy Image As..." submenu: Image / Image with Background / Markdown / Path
 #[component]
-fn ImageContextItems(src: String, on_close: EventHandler<()>) -> Element {
+fn CopyImageAsSubmenu(
+    src: String,
+    alt_text: Option<String>,
+    on_close: EventHandler<()>,
+) -> Element {
+    let alt_for_markdown = alt_text.unwrap_or_default();
+
     rsx! {
-        ContextMenuItem {
-            label: "Copy Image",
-            icon: Some(IconName::Photo),
-            on_click: {
-                let src = src.clone();
-                let on_close = on_close;
-                move |_| {
-                    crate::utils::clipboard::copy_image_from_data_url(&src);
-                    on_close.call(());
-                }
-            },
-        }
+        ContextMenuSubmenu {
+            label: "Copy Image As...",
 
-        ContextMenuItem {
-            label: "Save Image As...",
-            icon: Some(IconName::Download),
-            on_click: {
-                let src = src.clone();
-                let on_close = on_close;
-                move |_| {
-                    // Run in background thread to prevent UI blocking during HTTP download
+            ContextMenuItem {
+                label: "Image",
+                on_click: {
                     let src = src.clone();
-                    std::thread::spawn(move || {
-                        crate::utils::image::save_image(&src);
-                    });
-                    on_close.call(());
-                }
-            },
-        }
+                    move |_| {
+                        copy_image_to_clipboard(&src, false);
+                        on_close.call(());
+                    }
+                },
+            }
 
-        ContextMenuItem {
-            label: "Copy Image Path",
-            icon: Some(IconName::Copy),
-            on_click: {
-                let src = src.clone();
-                let on_close = on_close;
-                move |_| {
-                    // For data URLs, just copy the src (or original path if available)
-                    crate::utils::clipboard::copy_text(&src);
-                    on_close.call(());
-                }
-            },
+            ContextMenuItem {
+                label: "Image with Background",
+                on_click: {
+                    let src = src.clone();
+                    move |_| {
+                        copy_image_to_clipboard(&src, true);
+                        on_close.call(());
+                    }
+                },
+            }
+
+            ContextMenuItem {
+                label: "Markdown",
+                on_click: {
+                    let src = src.clone();
+                    let alt_for_markdown = alt_for_markdown.clone();
+                    move |_| {
+                        let markdown = format!("![{}]({})", alt_for_markdown, src);
+                        crate::utils::clipboard::copy_text(&markdown);
+                        on_close.call(());
+                    }
+                },
+            }
+
+            CopyMenuItem { label: "Path", text: src, on_close }
         }
     }
 }
 
+// ============================================================================
+// Copy Image As... Submenu for Special Blocks (Mermaid/Math)
+// ============================================================================
+
+/// "Copy Image As..." submenu: Image / Image with Background
 #[component]
-fn CopyPathItems(
-    current_file: PathBuf,
-    source_line: Option<u32>,
-    source_line_end: Option<u32>,
-    on_close: EventHandler<()>,
-) -> Element {
-    let path_str = current_file.display().to_string();
-    let has_range =
-        source_line.is_some() && source_line_end.is_some() && source_line != source_line_end;
-
+fn CopySpecialBlockAsSubmenu(is_mermaid: bool, on_close: EventHandler<()>) -> Element {
     rsx! {
-        ContextMenuItem {
-            label: "Copy File Path",
-            icon: Some(IconName::Copy),
-            on_click: {
-                let path_str = path_str.clone();
-                let on_close = on_close;
-                move |_| {
-                    crate::utils::clipboard::copy_text(&path_str);
-                    on_close.call(());
-                }
-            },
-        }
+        ContextMenuSubmenu {
+            label: "Copy Image As...",
 
-        if let Some(line) = source_line {
             ContextMenuItem {
-                label: format!("Copy File Path with Line ({line})"),
-                icon: Some(IconName::Copy),
+                label: "Image",
                 on_click: {
-                    let path_str = path_str.clone();
-                    let on_close = on_close;
                     move |_| {
-                        crate::utils::clipboard::copy_text(format!("{path_str}:{line}"));
+                        copy_special_block_to_clipboard(is_mermaid, false);
+                        on_close.call(());
+                    }
+                },
+            }
+
+            ContextMenuItem {
+                label: "Image with Background",
+                on_click: {
+                    move |_| {
+                        copy_special_block_to_clipboard(is_mermaid, true);
                         on_close.call(());
                     }
                 },
             }
         }
+    }
+}
 
-        if has_range {
-            if let (Some(start), Some(end)) = (source_line, source_line_end) {
-                ContextMenuItem {
-                    label: format!("Copy File Path with Range ({start}-{end})"),
-                    icon: Some(IconName::Copy),
-                    on_click: {
-                        let path_str = path_str.clone();
-                        let on_close = on_close;
-                        move |_| {
-                            crate::utils::clipboard::copy_text(
-                                format!("{path_str}:{start}-{end}"),
-                            );
-                            on_close.call(());
-                        }
-                    },
-                }
+// ============================================================================
+// Special Block Helper Functions
+// ============================================================================
+
+/// Copy a special block (Mermaid or Math) to clipboard via JS rasterization.
+fn copy_special_block_to_clipboard(is_mermaid: bool, opaque: bool) {
+    rasterize_special_block(is_mermaid, opaque, |data_url| {
+        std::thread::spawn(move || {
+            crate::utils::clipboard::copy_image_from_data_url(&data_url);
+        });
+    });
+}
+
+/// Save a special block (Mermaid or Math) as an image file.
+fn save_special_block_as_image(is_mermaid: bool) {
+    rasterize_special_block(is_mermaid, true, |data_url| {
+        crate::utils::image::save_image(&data_url);
+    });
+}
+
+/// Rasterize a special block (Mermaid or Math) via JS and invoke the callback
+/// with the resulting data URL on success.
+///
+/// Uses `spawn_forever` so the task survives context menu unmount.
+/// The menu closes (on_close) immediately after this call, which would
+/// cancel a regular spawn task before eval.recv() completes.
+fn rasterize_special_block(
+    is_mermaid: bool,
+    opaque: bool,
+    on_success: impl FnOnce(String) + Send + 'static,
+) {
+    let opaque_str = if opaque { "true" } else { "false" };
+    let block_type = if is_mermaid { "Mermaid" } else { "Math" };
+    dioxus_core::spawn_forever(async move {
+        let js = if is_mermaid {
+            format!(
+                "(async () => {{ dioxus.send(await window.Arto.rasterizeMermaidBlock({})); }})();",
+                opaque_str
+            )
+        } else {
+            format!(
+                "(async () => {{ dioxus.send(await window.Arto.rasterizeMathBlock({})); }})();",
+                opaque_str
+            )
+        };
+
+        let mut eval = document::eval(&js);
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(15),
+            eval.recv::<Option<String>>(),
+        )
+        .await;
+
+        // Cleanup element references after rasterization
+        let _ = document::eval("window.Arto.cleanupElementReferences();");
+
+        match result {
+            Ok(Ok(Some(data_url))) => on_success(data_url),
+            Ok(Ok(None)) => {
+                tracing::warn!(block_type, "Block rasterization returned null");
+            }
+            Ok(Err(e)) => {
+                tracing::error!(%e, block_type, "Failed to rasterize block");
+            }
+            Err(_) => {
+                tracing::error!(block_type, "Block rasterization timed out");
             }
         }
-    }
+    });
 }

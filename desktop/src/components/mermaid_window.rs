@@ -154,6 +154,7 @@ fn use_zoom_update_handler(zoom_level: Signal<i32>) {
 enum CopyStatus {
     #[default]
     Idle,
+    Copying,
     Success,
     Error,
 }
@@ -165,24 +166,90 @@ fn CopyImageButton() -> Element {
 
     let handle_click = move |_| {
         spawn(async move {
-            // Call JavaScript to copy the diagram as image
+            copy_status.set(CopyStatus::Copying);
+
+            // Rasterize SVG via Canvas in JS and send PNG data URL back to Rust.
+            // NOTE: Cannot use window.Arto.rasterizeImage here because the Mermaid
+            // window only imports initMermaidWindow, not the full init() that sets
+            // up window.Arto.
             let mut eval = document::eval(indoc::indoc! {r#"
                 (async () => {
-                    if (window.mermaidWindowController) {
-                        const success = await window.mermaidWindowController.copyAsImage();
-                        dioxus.send(success);
-                    } else {
-                        dioxus.send(false);
+                    const container = document.getElementById('mermaid-diagram-container');
+                    if (!container) { dioxus.send(null); return; }
+
+                    const svg = container.querySelector('svg');
+                    if (!svg) { dioxus.send(null); return; }
+
+                    // Get SVG dimensions from viewBox (preferred) or getBBox (fallback)
+                    let width, height;
+                    const viewBox = svg.getAttribute('viewBox');
+                    if (viewBox) {
+                        const parts = viewBox.split(/[\s,]+/).map(Number);
+                        if (parts.length === 4 && parts[2] > 0 && parts[3] > 0) {
+                            width = parts[2];
+                            height = parts[3];
+                        }
                     }
+                    if (!width || !height) {
+                        const bbox = svg.getBBox();
+                        width = bbox.width;
+                        height = bbox.height;
+                    }
+                    if (!width || !height) { dioxus.send(null); return; }
+
+                    // Serialize SVG with explicit dimensions and resolved font
+                    const svgClone = svg.cloneNode(true);
+                    svgClone.setAttribute('width', String(width));
+                    svgClone.setAttribute('height', String(height));
+                    // Resolve inherited font-family for standalone rendering
+                    const computedFont = getComputedStyle(svg).fontFamily;
+                    if (computedFont) { svgClone.style.fontFamily = computedFont; }
+                    const svgString = new XMLSerializer().serializeToString(svgClone);
+                    const base64 = btoa(unescape(encodeURIComponent(svgString)));
+                    const svgDataUrl = `data:image/svg+xml;base64,${base64}`;
+
+                    // Create 2x canvas with background color
+                    const scale = 2;
+                    const canvas = document.createElement('canvas');
+                    canvas.width = width * scale;
+                    canvas.height = height * scale;
+                    const ctx = canvas.getContext('2d');
+                    if (!ctx) { dioxus.send(null); return; }
+                    ctx.scale(scale, scale);
+                    const bgColor = getComputedStyle(document.body)
+                        .getPropertyValue('--bg-color').trim() || '#ffffff';
+                    ctx.fillStyle = bgColor;
+                    ctx.fillRect(0, 0, width, height);
+
+                    // Draw SVG onto canvas
+                    const img = new Image();
+                    const pngDataUrl = await new Promise((resolve) => {
+                        img.onload = () => {
+                            ctx.drawImage(img, 0, 0);
+                            resolve(canvas.toDataURL('image/png'));
+                        };
+                        img.onerror = () => resolve(null);
+                        img.src = svgDataUrl;
+                    });
+                    dioxus.send(pngDataUrl);
                 })();
             "#});
 
-            // Receive the result from JavaScript
-            match eval.recv::<bool>().await {
-                Ok(true) => {
+            let result = tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                eval.recv::<Option<String>>(),
+            )
+            .await;
+
+            match result {
+                Ok(Ok(Some(data_url))) => {
+                    std::thread::spawn(move || {
+                        crate::utils::clipboard::copy_image_from_data_url(&data_url);
+                    });
                     copy_status.set(CopyStatus::Success);
                 }
                 _ => {
+                    tracing::error!("Failed to rasterize Mermaid diagram for clipboard copy");
                     copy_status.set(CopyStatus::Error);
                 }
             }
@@ -195,6 +262,7 @@ fn CopyImageButton() -> Element {
 
     let (icon, extra_class) = match *copy_status.read() {
         CopyStatus::Idle => (IconName::Photo, ""),
+        CopyStatus::Copying => (IconName::Photo, "copying"),
         CopyStatus::Success => (IconName::Check, "copied"),
         CopyStatus::Error => (IconName::Close, "error"),
     };

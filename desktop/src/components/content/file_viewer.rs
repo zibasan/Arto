@@ -38,6 +38,7 @@ pub fn FileViewer(file: PathBuf) -> Element {
     use_file_watcher(file.clone(), state);
     use_link_click_handler(file.clone(), state);
     use_mermaid_window_handler();
+    use_clipboard_handlers();
     use_context_menu_handler(file.clone(), base_dir);
 
     rsx! {
@@ -382,6 +383,50 @@ fn use_mermaid_window_handler() {
                             crate::window::open_or_focus_mermaid_window(source.to_string(), theme);
                         }
                     }
+                }
+            }
+        });
+    });
+}
+
+/// Hook to register Rust clipboard handlers accessible from JavaScript.
+///
+/// Registers `window.rustCopyText(text)` and `window.rustCopyImage(dataUrl)` functions
+/// that bridge JS clipboard requests to Rust's native clipboard utilities.
+fn use_clipboard_handlers() {
+    use_effect(|| {
+        // Text copy handler
+        spawn(async {
+            let mut eval = document::eval(indoc::indoc! {r#"
+                window.rustCopyText = (text) => {
+                    dioxus.send({ type: "text", data: text });
+                };
+            "#});
+
+            while let Ok(msg) = eval.recv::<serde_json::Value>().await {
+                if let Some(text) = msg.get("data").and_then(|v| v.as_str()) {
+                    let text = text.to_string();
+                    std::thread::spawn(move || {
+                        crate::utils::clipboard::copy_text(&text);
+                    });
+                }
+            }
+        });
+
+        // Image copy handler
+        spawn(async {
+            let mut eval = document::eval(indoc::indoc! {r#"
+                window.rustCopyImage = (dataUrl) => {
+                    dioxus.send({ type: "image", data: dataUrl });
+                };
+            "#});
+
+            while let Ok(msg) = eval.recv::<serde_json::Value>().await {
+                if let Some(data_url) = msg.get("data").and_then(|v| v.as_str()) {
+                    let data_url = data_url.to_string();
+                    std::thread::spawn(move || {
+                        crate::utils::clipboard::copy_image_from_data_url(&data_url);
+                    });
                 }
             }
         });

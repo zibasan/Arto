@@ -66,7 +66,7 @@
               # 2. Run: nix build .#renderer-assets
               # 3. Copy the expected hash from error message
               # 4. Update hash value below
-              hash = "sha256-3sE2ARgoQJfVVnqSvLCVNNVXtJ/fPz3X/PrI6FcsoC8=";
+              hash = "sha256-8KytJkWmwjphWnWxLrEDTT+KKO1ooyT0iQbYmHDZtgg=";
               fetcherVersion = 2;
             };
 

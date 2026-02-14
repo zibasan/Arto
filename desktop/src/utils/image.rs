@@ -128,6 +128,20 @@ fn get_file_info_from_mime_type(
     }
 }
 
+/// Check if a URL points to an SVG image.
+///
+/// Detects SVG by:
+/// - Data URLs: checks if the MIME type is `image/svg+xml`
+/// - HTTP/HTTPS URLs: checks if the file extension is `.svg`
+pub fn is_svg_url(src: impl AsRef<str>) -> bool {
+    let src = src.as_ref();
+    if src.starts_with("data:") {
+        extract_mime_type_from_data_url(src) == Some("image/svg+xml")
+    } else {
+        matches!(extract_extension_from_url(src), Some(ext) if ext.eq_ignore_ascii_case("svg"))
+    }
+}
+
 /// Download an image from an HTTP/HTTPS URL.
 ///
 /// Returns the image bytes and the content-type header if available.
@@ -138,7 +152,7 @@ fn get_file_info_from_mime_type(
 /// - Request timeout to prevent indefinite hangs
 /// - Maximum content length check to prevent memory exhaustion
 /// - Content-type validation to ensure the response is an image
-fn download_image(url: &str) -> Result<(Vec<u8>, Option<String>), String> {
+pub(crate) fn download_image(url: &str) -> Result<(Vec<u8>, Option<String>), String> {
     use std::io::Read;
 
     let response = ureq::get(url)
@@ -198,6 +212,33 @@ fn download_image(url: &str) -> Result<(Vec<u8>, Option<String>), String> {
     }
 
     Ok((bytes, content_type))
+}
+
+/// Download an image from an HTTP/HTTPS URL and encode it as a data URL.
+///
+/// This is useful for bypassing browser CORS restrictions when the image
+/// needs to be drawn on a Canvas and exported via `toDataURL()`.
+pub(crate) fn download_image_as_data_url(url: &str) -> Result<String, String> {
+    let (bytes, content_type) = download_image(url)?;
+    // Prefer Content-Type header; fall back to URL extension inference
+    let mime = content_type
+        .as_deref()
+        .or_else(|| {
+            extract_extension_from_url(url).and_then(|ext| {
+                match ext.to_ascii_lowercase().as_str() {
+                    "png" => Some("image/png"),
+                    "jpg" | "jpeg" => Some("image/jpeg"),
+                    "gif" => Some("image/gif"),
+                    "webp" => Some("image/webp"),
+                    "svg" => Some("image/svg+xml"),
+                    "bmp" => Some("image/bmp"),
+                    _ => None,
+                }
+            })
+        })
+        .unwrap_or("image/png");
+    let b64 = base64::prelude::BASE64_STANDARD.encode(&bytes);
+    Ok(format!("data:{};base64,{}", mime, b64))
 }
 
 /// Extract the filename from a URL path.
@@ -411,6 +452,23 @@ mod tests {
 
         // Special characters removed
         assert_eq!(sanitize_filename("file<>:\"|?*.png"), "file.png");
+    }
+
+    #[test]
+    fn test_is_svg_url_data_url() {
+        assert!(is_svg_url("data:image/svg+xml;base64,PHN2Zz4="));
+        assert!(!is_svg_url("data:image/png;base64,iVBORw0KGgo="));
+        assert!(!is_svg_url("data:image/jpeg;base64,/9j/4AAQ="));
+    }
+
+    #[test]
+    fn test_is_svg_url_http_url() {
+        assert!(is_svg_url("https://example.com/diagram.svg"));
+        assert!(is_svg_url("https://example.com/path/image.svg?v=2"));
+        assert!(is_svg_url("https://example.com/diagram.SVG"));
+        assert!(is_svg_url("https://example.com/diagram.Svg"));
+        assert!(!is_svg_url("https://example.com/photo.png"));
+        assert!(!is_svg_url("https://example.com/photo.jpg"));
     }
 
     #[test]
