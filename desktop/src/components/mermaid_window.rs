@@ -1,10 +1,10 @@
-use dioxus::desktop::{use_muda_event_handler, window};
 use dioxus::prelude::*;
 use sha2::{Digest, Sha256};
 
 use crate::assets::MAIN_SCRIPT;
 use crate::components::icon::{Icon, IconName};
 use crate::components::theme_selector::ThemeSelector;
+use crate::hooks::{use_theme_dispatch, use_window_close_handler, use_zoom_sync, CopyStatus};
 use crate::theme::Theme;
 
 /// Props for MermaidWindow component
@@ -33,20 +33,32 @@ pub fn MermaidWindow(props: MermaidWindowProps) -> Element {
     let current_theme = use_signal(|| props.theme);
     let zoom_level = use_signal(|| 100);
 
+    // Setup shared hooks
+    use_window_close_handler();
+    use_zoom_sync(zoom_level);
+    use_theme_dispatch(current_theme);
+
     // Load viewer script on mount
-    use_viewer_script_loader(props.source.clone(), props.diagram_id.clone());
+    use_effect(move || {
+        let source_json = serde_json::to_string(&props.source).unwrap_or_default();
+        let diagram_id_json = serde_json::to_string(&props.diagram_id).unwrap_or_default();
 
-    // Setup zoom update handler
-    use_zoom_update_handler(zoom_level);
+        spawn(async move {
+            let eval_result = document::eval(&indoc::formatdoc! {r#"
+                (async () => {{
+                    try {{
+                        const {{ initMermaidWindow }} = await import("{MAIN_SCRIPT}");
+                        await initMermaidWindow({source_json}, {diagram_id_json});
+                    }} catch (error) {{
+                        console.error("Failed to load mermaid window module:", error);
+                    }}
+                }})();
+            "#});
 
-    // Handle Cmd+W and Cmd+Shift+W to close this child window
-    use_muda_event_handler(move |event| {
-        if !window().is_focused() {
-            return;
-        }
-        if crate::menu::is_close_action(event) {
-            window().close();
-        }
+            if let Err(e) = eval_result.await {
+                tracing::error!("Failed to initialize mermaid window: {}", e);
+            }
+        });
     });
 
     rsx! {
@@ -64,7 +76,7 @@ pub fn MermaidWindow(props: MermaidWindowProps) -> Element {
 
                 div {
                     class: "mermaid-window-controls",
-                    CopyImageButton {}
+                    MermaidCopyImageButton {}
                     ThemeSelector { current_theme }
                 }
             }
@@ -97,71 +109,11 @@ pub fn MermaidWindow(props: MermaidWindowProps) -> Element {
     }
 }
 
-/// Hook to load viewer script and initialize
-fn use_viewer_script_loader(source: String, diagram_id: String) {
-    use_effect(move || {
-        let source = source.clone();
-        let diagram_id = diagram_id.clone();
-
-        spawn(async move {
-            // Escape source for JavaScript (handle backticks, backslashes, quotes)
-            let escaped_source = source
-                .replace('\\', "\\\\")
-                .replace('`', "\\`")
-                .replace('$', "\\$");
-
-            let eval_result = document::eval(&indoc::formatdoc! {r#"
-                (async () => {{
-                    try {{
-                        const {{ initMermaidWindow }} = await import("{MAIN_SCRIPT}");
-                        await initMermaidWindow(`{escaped_source}`, '{diagram_id}');
-                    }} catch (error) {{
-                        console.error("Failed to load mermaid window module:", error);
-                    }}
-                }})();
-            "#});
-
-            if let Err(e) = eval_result.await {
-                tracing::error!("Failed to initialize mermaid window: {}", e);
-            }
-        });
-    });
-}
-
-/// Hook to listen for zoom updates from JavaScript
-fn use_zoom_update_handler(zoom_level: Signal<i32>) {
-    use_effect(move || {
-        let mut zoom_level = zoom_level;
-
-        spawn(async move {
-            let mut eval_provider = document::eval(indoc::indoc! {r#"
-                window.updateZoomLevel = (zoom) => {
-                    dioxus.send({ zoom: Math.round(zoom) });
-                };
-            "#});
-
-            while let Ok(data) = eval_provider.recv::<serde_json::Value>().await {
-                if let Some(zoom) = data.get("zoom").and_then(|v| v.as_i64()) {
-                    zoom_level.set(zoom as i32);
-                }
-            }
-        });
-    });
-}
-
-/// Copy status for visual feedback
-#[derive(Clone, Copy, PartialEq, Default)]
-enum CopyStatus {
-    #[default]
-    Idle,
-    Copying,
-    Success,
-    Error,
-}
-
-/// Copy image button component
+/// Mermaid-specific copy image button that rasterizes SVG inline.
+/// Unlike Image/Math windows, Mermaid uses direct SVG→Canvas rasterization
+/// rather than a named JS export function.
 #[component]
-fn CopyImageButton() -> Element {
+fn MermaidCopyImageButton() -> Element {
     let mut copy_status = use_signal(|| CopyStatus::Idle);
 
     let handle_click = move |_| {
@@ -169,9 +121,8 @@ fn CopyImageButton() -> Element {
             copy_status.set(CopyStatus::Copying);
 
             // Rasterize SVG via Canvas in JS and send PNG data URL back to Rust.
-            // NOTE: Cannot use window.Arto.rasterizeImage here because the Mermaid
-            // window only imports initMermaidWindow, not the full init() that sets
-            // up window.Arto.
+            // NOTE: Cannot use the shared CopyImageButton here because Mermaid
+            // uses inline SVG rasterization, not a named JS export function.
             let mut eval = document::eval(indoc::indoc! {r#"
                 (async () => {
                     const container = document.getElementById('mermaid-diagram-container');
@@ -267,11 +218,14 @@ fn CopyImageButton() -> Element {
         CopyStatus::Error => (IconName::Close, "error"),
     };
 
+    let is_copying = matches!(*copy_status.read(), CopyStatus::Copying);
+
     rsx! {
         button {
             class: "viewer-control-btn {extra_class}",
             "aria-label": "Copy diagram as image",
             title: "Copy diagram as image",
+            disabled: is_copying,
             onclick: handle_click,
             Icon { name: icon, size: 18 }
         }
