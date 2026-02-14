@@ -6,7 +6,8 @@
     "dev": "vite build --mode development --watch --minify false",
     "build": "vite build --minify",
     "fmt": "oxfmt --write **/*.{ts,tsx,js,jsx,css}",
-    "check": "oxlint"
+    "check": "oxlint",
+    "test": "vitest run"
   },
   "dependencies": {
     "@types/node": "^25.2.1",
@@ -17,11 +18,13 @@
   },
   "devDependencies": {
     "@tabler/icons": "^3.36.1",
+    "happy-dom": "^20.6.1",
     "oxfmt": "^0.28.0",
     "oxlint": "^1.43.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
-    "vite": "^7.3.1"
+    "vite": "^7.3.1",
+    "vitest": "^4.0.18"
   },
   "packageManager": "pnpm@9.15.9"
 }

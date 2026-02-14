@@ -11,7 +11,7 @@ fmt: desktop::fmt renderer::fmt
 
 check: renderer::assets desktop::check renderer::check
 
-test: renderer::assets desktop::test
+test: renderer::assets desktop::test renderer::test
 
 verify: fmt check test
 

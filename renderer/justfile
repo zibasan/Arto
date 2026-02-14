@@ -15,7 +15,10 @@ fmt: setup
 check: setup assets
   pnpm run check
 
-verify: fmt check
+test: setup
+  pnpm run test
+
+verify: fmt check test
 
 clean:
   pnpm cache delete

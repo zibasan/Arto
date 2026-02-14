@@ -9,6 +9,7 @@ class RenderCoordinator {
   #hasPendingMutations = false;
   #pendingMutationRetries = 0;
   #renderCompleteCallbacks: Array<() => void> = [];
+  #observer: MutationObserver | null = null;
 
   // Safety limit to prevent infinite render loops caused by
   // renderers modifying the DOM (e.g., Mermaid SVG insertion).
@@ -17,7 +18,7 @@ class RenderCoordinator {
   static readonly #MAX_PENDING_RETRIES = 3;
 
   init(): void {
-    const observer = new MutationObserver((mutations) => {
+    this.#observer = new MutationObserver((mutations) => {
       // Defer mutations that arrive while rendering to avoid cascade.
       // They will be re-scheduled after the current render completes.
       if (this.#isRendering) {
@@ -36,8 +37,7 @@ class RenderCoordinator {
       }
     });
 
-    const root = document.body;
-    observer.observe(root, {
+    this.#observer.observe(document.body, {
       subtree: true,
       childList: true,
       attributes: true,
@@ -46,6 +46,17 @@ class RenderCoordinator {
 
     // Schedule an initial render
     this.scheduleRender();
+  }
+
+  destroy(): void {
+    if (this.#observer) {
+      this.#observer.disconnect();
+      this.#observer = null;
+    }
+    if (this.#rafId !== null) {
+      cancelAnimationFrame(this.#rafId);
+      this.#rafId = null;
+    }
   }
 
   scheduleRender(): void {
@@ -186,3 +197,6 @@ class RenderCoordinator {
 }
 
 export const renderCoordinator = new RenderCoordinator();
+
+/** @internal */
+export const _internal = { RenderCoordinator };
