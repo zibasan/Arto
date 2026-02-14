@@ -165,17 +165,27 @@ export function findSvgElement(container: Element): SVGElement {
   return svg;
 }
 
-/** Get SVG dimensions from bounding box */
+/** Get SVG dimensions, preferring viewBox over getBBox.
+ *  Mermaid sets viewBox to the full intended rendering area during diagram
+ *  generation, whereas getBBox() returns only the tight content bounds which
+ *  may be smaller (especially for Gantt charts). */
 export function getSvgDimensions(svg: SVGElement): { width: number; height: number } {
-  const bbox = svg.getBBox();
-  const width = bbox.width;
-  const height = bbox.height;
+  // Prefer viewBox dimensions (matches mermaid-window-controller approach)
+  const viewBox = svg.getAttribute("viewBox");
+  if (viewBox) {
+    const parts = viewBox.split(/[\s,]+/).map(Number);
+    if (parts.length === 4 && parts[2] > 0 && parts[3] > 0) {
+      return { width: parts[2], height: parts[3] };
+    }
+  }
 
-  if (width === 0 || height === 0) {
+  // Fallback to getBBox for SVGs without viewBox
+  const bbox = svg.getBBox();
+  if (bbox.width === 0 || bbox.height === 0) {
     throw new Error("Invalid SVG dimensions");
   }
 
-  return { width, height };
+  return { width: bbox.width, height: bbox.height };
 }
 
 /** Create a canvas with the SVG background color applied */
@@ -203,7 +213,9 @@ export function createCanvasFromSvg(
   return canvas;
 }
 
-/** Convert SVG element to data URL */
+/** Convert SVG element to data URL.
+ *  Resolves inherited styles (e.g., font-family) so the SVG renders
+ *  correctly when loaded as a standalone image. */
 export function convertSvgToDataUrl(
   svg: SVGElement,
   dimensions: { width: number; height: number },
@@ -211,6 +223,14 @@ export function convertSvgToDataUrl(
   const svgClone = svg.cloneNode(true) as SVGElement;
   svgClone.setAttribute("width", String(dimensions.width));
   svgClone.setAttribute("height", String(dimensions.height));
+
+  // Resolve inherited font-family from the live DOM.
+  // Mermaid uses fontFamily: "inherit" which works in-page but fails
+  // when the SVG is loaded as a standalone <img> (no parent to inherit from).
+  const computedFont = getComputedStyle(svg).fontFamily;
+  if (computedFont) {
+    svgClone.style.fontFamily = computedFont;
+  }
 
   const svgString = new XMLSerializer().serializeToString(svgClone);
   const base64SVG = btoa(unescape(encodeURIComponent(svgString)));
@@ -247,5 +267,15 @@ export function createBlobPromise(canvas: HTMLCanvasElement, dataUrl: string): P
 
     img.onerror = () => reject(new Error("Failed to load image"));
     img.src = dataUrl;
+  });
+}
+
+/** Convert a Blob to a data URL string */
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(new Error("Failed to read blob as data URL"));
+    reader.readAsDataURL(blob);
   });
 }
