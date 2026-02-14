@@ -16,6 +16,8 @@ declare global {
       restoreSelection: typeof restoreSelection;
       /** Register a callback to be called when rendering (Mermaid, KaTeX, etc.) completes */
       onRenderComplete: (callback: () => void) => void;
+      /** Force a render pass for any content already in the DOM */
+      scheduleRender: () => void;
       search: {
         setup: typeof findInPage.setup;
         find: typeof findInPage.find;
@@ -60,6 +62,7 @@ export function init(): void {
     setupContextMenu,
     restoreSelection,
     onRenderComplete: (callback) => renderCoordinator.onRenderComplete(callback),
+    scheduleRender: () => renderCoordinator.scheduleRender(),
     search: {
       setup: findInPage.setup,
       find: findInPage.find,

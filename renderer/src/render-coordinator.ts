@@ -6,12 +6,22 @@ import * as codeCopy from "./code-copy";
 class RenderCoordinator {
   #rafId: number | null = null;
   #isRendering = false;
+  #hasPendingMutations = false;
+  #pendingMutationRetries = 0;
   #renderCompleteCallbacks: Array<() => void> = [];
+
+  // Safety limit to prevent infinite render loops caused by
+  // renderers modifying the DOM (e.g., Mermaid SVG insertion).
+  // In practice, data-rendered/data-highlighted guards on individual
+  // renderers terminate the cycle after 1-2 iterations.
+  static readonly #MAX_PENDING_RETRIES = 3;
 
   init(): void {
     const observer = new MutationObserver((mutations) => {
-      // Skip if currently rendering to avoid cascade
+      // Defer mutations that arrive while rendering to avoid cascade.
+      // They will be re-scheduled after the current render completes.
       if (this.#isRendering) {
+        this.#hasPendingMutations = true;
         return;
       }
 
@@ -116,6 +126,7 @@ class RenderCoordinator {
         console.error("RenderCoordinator: Error during Mermaid re-render:", error);
       } finally {
         this.#isRendering = false;
+        this.#processPendingMutations();
       }
     });
   }
@@ -126,6 +137,8 @@ class RenderCoordinator {
     const markdownBodies = document.querySelectorAll(".markdown-body");
     if (markdownBodies.length === 0) {
       this.#isRendering = false;
+      this.#fireRenderCompleteCallbacks();
+      this.#processPendingMutations();
       return;
     }
 
@@ -139,12 +152,36 @@ class RenderCoordinator {
         }),
       );
       console.debug("RenderCoordinator: Batch render completed");
-      this.#fireRenderCompleteCallbacks();
     } catch (error) {
       console.error("RenderCoordinator: Error during batch render:", error);
     } finally {
       this.#isRendering = false;
+      this.#fireRenderCompleteCallbacks();
+      this.#processPendingMutations();
     }
+  }
+
+  #processPendingMutations(): void {
+    if (!this.#hasPendingMutations) {
+      this.#pendingMutationRetries = 0;
+      return;
+    }
+
+    this.#hasPendingMutations = false;
+    this.#pendingMutationRetries++;
+
+    if (this.#pendingMutationRetries > RenderCoordinator.#MAX_PENDING_RETRIES) {
+      console.warn(
+        `RenderCoordinator: Max pending mutation retries (${RenderCoordinator.#MAX_PENDING_RETRIES}) reached, breaking potential loop`,
+      );
+      this.#pendingMutationRetries = 0;
+      return;
+    }
+
+    console.debug(
+      `RenderCoordinator: Processing deferred mutations (attempt ${this.#pendingMutationRetries})`,
+    );
+    this.scheduleRender();
   }
 }
 
