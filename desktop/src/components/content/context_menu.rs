@@ -109,15 +109,30 @@ pub fn ContentContextMenu(props: ContentContextMenuProps) -> Element {
     };
     let is_image = image_info.is_some();
 
+    // Detect special blocks (Mermaid/Math) for image operations
+    let (is_mermaid, is_math) = match &props.context {
+        ContentContext::Mermaid { .. } => (true, false),
+        ContentContext::MathBlock { .. } => (false, true),
+        _ => (false, false),
+    };
+    let is_special_block = is_mermaid || is_math;
+
     let has_context_specific = matches!(
         props.context,
-        ContentContext::Link { .. } | ContentContext::Image { .. }
+        ContentContext::Link { .. }
+            | ContentContext::Image { .. }
+            | ContentContext::Mermaid { .. }
+            | ContentContext::MathBlock { .. }
     );
 
     let has_table = props.table_csv.is_some();
     let has_file = props.current_file.is_some();
-    let has_any_submenu =
-        props.has_selection || has_file || copy_code_source.is_some() || has_table || is_image;
+    let has_any_submenu = props.has_selection
+        || has_file
+        || copy_code_source.is_some()
+        || has_table
+        || is_image
+        || is_special_block;
 
     // Determine smart default for Copy Path label and value
     let (copy_path_label, copy_path_value) = match (
@@ -152,7 +167,9 @@ pub fn ContentContextMenu(props: ContentContextMenuProps) -> Element {
             class: "context-menu-backdrop",
             // Prevent mousedown from clearing text selection
             onmousedown: move |evt| evt.prevent_default(),
-            onclick: move |_| props.on_close.call(()),
+            onclick: move |_| {
+                props.on_close.call(());
+            },
         }
 
         // Context menu
@@ -219,6 +236,21 @@ pub fn ContentContextMenu(props: ContentContextMenuProps) -> Element {
                         let on_close = props.on_close;
                         move |_| {
                             copy_image_to_clipboard(&src, false);
+                            on_close.call(());
+                        }
+                    },
+                }
+            }
+
+            // Copy Image for Mermaid/Math blocks (default: transparent)
+            if is_special_block {
+                ContextMenuItem {
+                    label: "Copy Image",
+                    icon: Some(IconName::Photo),
+                    on_click: {
+                        let on_close = props.on_close;
+                        move |_| {
+                            copy_special_block_to_clipboard(is_mermaid, false);
                             on_close.call(());
                         }
                     },
@@ -348,6 +380,14 @@ pub fn ContentContextMenu(props: ContentContextMenuProps) -> Element {
                 }
             }
 
+            // Copy Image As... (Image / Image with Background) for special blocks
+            if is_special_block {
+                CopySpecialBlockAsSubmenu {
+                    is_mermaid,
+                    on_close: props.on_close,
+                }
+            }
+
             // === Section 4: Context-specific items (link, image) ===
             if has_context_specific {
                 ContextMenuSeparator {}
@@ -374,6 +414,19 @@ pub fn ContentContextMenu(props: ContentContextMenuProps) -> Element {
                                 std::thread::spawn(move || {
                                     crate::utils::image::save_image(&src);
                                 });
+                                on_close.call(());
+                            }
+                        },
+                    }
+                },
+                ContentContext::Mermaid { .. } | ContentContext::MathBlock { .. } => rsx! {
+                    ContextMenuItem {
+                        label: "Save Image As...",
+                        icon: Some(IconName::Download),
+                        on_click: {
+                            let on_close = props.on_close;
+                            move |_| {
+                                save_special_block_as_image(is_mermaid);
                                 on_close.call(());
                             }
                         },
@@ -946,4 +999,109 @@ fn CopyImageAsSubmenu(
             CopyMenuItem { label: "Path", text: src, on_close }
         }
     }
+}
+
+// ============================================================================
+// Copy Image As... Submenu for Special Blocks (Mermaid/Math)
+// ============================================================================
+
+/// "Copy Image As..." submenu: Image / Image with Background
+#[component]
+fn CopySpecialBlockAsSubmenu(is_mermaid: bool, on_close: EventHandler<()>) -> Element {
+    rsx! {
+        ContextMenuSubmenu {
+            label: "Copy Image As...",
+
+            ContextMenuItem {
+                label: "Image",
+                on_click: {
+                    move |_| {
+                        copy_special_block_to_clipboard(is_mermaid, false);
+                        on_close.call(());
+                    }
+                },
+            }
+
+            ContextMenuItem {
+                label: "Image with Background",
+                on_click: {
+                    move |_| {
+                        copy_special_block_to_clipboard(is_mermaid, true);
+                        on_close.call(());
+                    }
+                },
+            }
+        }
+    }
+}
+
+// ============================================================================
+// Special Block Helper Functions
+// ============================================================================
+
+/// Copy a special block (Mermaid or Math) to clipboard via JS rasterization.
+fn copy_special_block_to_clipboard(is_mermaid: bool, opaque: bool) {
+    rasterize_special_block(is_mermaid, opaque, |data_url| {
+        std::thread::spawn(move || {
+            crate::utils::clipboard::copy_image_from_data_url(&data_url);
+        });
+    });
+}
+
+/// Save a special block (Mermaid or Math) as an image file.
+fn save_special_block_as_image(is_mermaid: bool) {
+    rasterize_special_block(is_mermaid, true, |data_url| {
+        crate::utils::image::save_image(&data_url);
+    });
+}
+
+/// Rasterize a special block (Mermaid or Math) via JS and invoke the callback
+/// with the resulting data URL on success.
+///
+/// Uses `spawn_forever` so the task survives context menu unmount.
+/// The menu closes (on_close) immediately after this call, which would
+/// cancel a regular spawn task before eval.recv() completes.
+fn rasterize_special_block(
+    is_mermaid: bool,
+    opaque: bool,
+    on_success: impl FnOnce(String) + Send + 'static,
+) {
+    let opaque_str = if opaque { "true" } else { "false" };
+    let block_type = if is_mermaid { "Mermaid" } else { "Math" };
+    dioxus_core::spawn_forever(async move {
+        let js = if is_mermaid {
+            format!(
+                "(async () => {{ dioxus.send(await window.Arto.rasterizeMermaidBlock({})); }})();",
+                opaque_str
+            )
+        } else {
+            format!(
+                "(async () => {{ dioxus.send(await window.Arto.rasterizeMathBlock({})); }})();",
+                opaque_str
+            )
+        };
+
+        let mut eval = document::eval(&js);
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(15),
+            eval.recv::<Option<String>>(),
+        )
+        .await;
+
+        // Cleanup element references after rasterization
+        let _ = document::eval("window.Arto.cleanupElementReferences();");
+
+        match result {
+            Ok(Ok(Some(data_url))) => on_success(data_url),
+            Ok(Ok(None)) => {
+                tracing::warn!(block_type, "Block rasterization returned null");
+            }
+            Ok(Err(e)) => {
+                tracing::error!(%e, block_type, "Failed to rasterize block");
+            }
+            Err(_) => {
+                tracing::error!(block_type, "Block rasterization timed out");
+            }
+        }
+    });
 }
