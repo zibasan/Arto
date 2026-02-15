@@ -92,12 +92,14 @@
   opacity: var(--opacity-muted);
 }
 
-/* Hover effect for clickable images in markdown viewer */
-.markdown-body img {
+/* Hover effect for clickable images in markdown viewer.
+   Only images with the viewer click handler get hover styling. */
+.markdown-body img[data-listeners-attached="true"] {
+  cursor: pointer;
   transition: opacity var(--transition-normal) ease;
 }
 
-.markdown-body img:hover {
+.markdown-body img[data-listeners-attached="true"]:hover {
   outline: 2px solid var(--link-color);
   outline-offset: -2px;
   opacity: 0.9;

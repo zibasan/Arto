@@ -122,21 +122,12 @@ function renderBlockMath(container: Element): void {
       element.dataset.listenersAttached = "true";
 
       // Make math block clickable to open viewer (single-click, like Mermaid)
-      element.style.cursor = "pointer";
-      element.style.transition = "opacity 0.2s ease";
-
+      // Hover styling (cursor, opacity, outline) is handled by CSS via
+      // pre.preprocessed-math:hover in math-window.css
       element.addEventListener("click", () => {
         if (typeof window.handleMathWindowOpen === "function") {
           window.handleMathWindowOpen(content);
         }
-      });
-
-      // Add hover effect to indicate interactivity
-      element.addEventListener("mouseenter", () => {
-        element.style.opacity = "0.7";
-      });
-      element.addEventListener("mouseleave", () => {
-        element.style.opacity = "1.0";
       });
     } catch (error) {
       console.error("Failed to render math block:", error);

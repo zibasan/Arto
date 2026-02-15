@@ -79,6 +79,7 @@
 
 /* Hover effect for clickable math blocks in markdown viewer */
 .markdown-body pre.preprocessed-math {
+  cursor: pointer;
   transition: opacity var(--transition-normal) ease;
 }
 

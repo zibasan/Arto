@@ -80,19 +80,10 @@ async function renderDiagram(element: HTMLElement): Promise<void> {
     if (svgElement) {
       // Fix text contrast for nodes with custom fill colors
       fixTextContrast(svgElement as SVGSVGElement);
-      svgElement.style.cursor = "pointer";
-      svgElement.style.transition = "opacity 0.2s ease";
-
+      // Hover styling (cursor, opacity, outline) is handled by CSS via
+      // pre.preprocessed-mermaid:hover in mermaid-window.css
       svgElement.addEventListener("click", () => {
         openMermaidWindow(mermaidSource);
-      });
-
-      // Add hover effect
-      svgElement.addEventListener("mouseenter", () => {
-        svgElement.style.opacity = "0.7";
-      });
-      svgElement.addEventListener("mouseleave", () => {
-        svgElement.style.opacity = "1.0";
       });
     }
 
