@@ -24,85 +24,7 @@ pub(super) fn post_process_html_tags(
     base_dir: &Path,
     table_source_lines: &[(usize, usize)],
 ) -> String {
-    let base_dir = base_dir.to_path_buf();
-    let mut output = Vec::new();
-    let table_index = std::cell::RefCell::new(0usize);
-    let table_source_lines = table_source_lines.to_vec();
-
-    let mut rewriter = HtmlRewriter::new(
-        Settings {
-            element_content_handlers: vec![
-                // Process table tags: inject source line attributes
-                element!("table", |el| {
-                    let mut idx = table_index.borrow_mut();
-                    if let Some(&(start, end)) = table_source_lines.get(*idx) {
-                        el.set_attribute("data-source-line", &start.to_string())?;
-                        el.set_attribute("data-source-line-end", &end.to_string())?;
-                    }
-                    *idx += 1;
-                    Ok(())
-                }),
-                // Process img tags: convert relative paths to data URLs
-                element!("img[src]", move |el| {
-                    if let Some(src) = el.get_attribute("src") {
-                        if !src.starts_with("http://")
-                            && !src.starts_with("https://")
-                            && !src.starts_with("data:")
-                        {
-                            let absolute_path = base_dir.join(&src);
-                            if let Ok(canonical_path) = absolute_path.canonicalize() {
-                                if let Ok(image_data) = std::fs::read(&canonical_path) {
-                                    let mime_type = get_mime_type(&canonical_path);
-                                    let base64_data = general_purpose::STANDARD.encode(&image_data);
-                                    let data_url =
-                                        format!("data:{};base64,{}", mime_type, base64_data);
-                                    el.set_attribute("src", &data_url)?;
-                                }
-                            }
-                        }
-                    }
-                    Ok(())
-                }),
-                // Process anchor tags: convert markdown links to spans
-                element!("a[href]", |el| {
-                    if let Some(href) = el.get_attribute("href") {
-                        if !href.starts_with("http://") && !href.starts_with("https://") {
-                            if let Some(ext) = std::path::Path::new(&href)
-                                .extension()
-                                .and_then(|e| e.to_str())
-                            {
-                                // Replace with span element
-                                let escaped_href = href.replace('\'', "\\'");
-                                let onclick = indoc::formatdoc! {r#"
-                                        if (event.button === 0 || event.button === 1) {{
-                                            event.preventDefault();
-                                            window.handleMarkdownLinkClick('{escaped_href}', event.button);
-                                        }}"#
-                                };
-                                el.set_tag_name("span")?;
-                                el.remove_attribute("href");
-                                if ext != "md" && ext != "markdown" {
-                                    el.set_attribute("class", "md-link md-link-invalid")?;
-                                } else {
-                                    el.set_attribute("class", "md-link")?;
-                                }
-                                el.set_attribute("onmousedown", &onclick)?;
-                            }
-                        }
-                    }
-                    Ok(())
-                }),
-            ],
-            ..Settings::default()
-        },
-        |chunk: &[u8]| {
-            output.extend_from_slice(chunk);
-        },
-    );
-
-    let _ = rewriter.write(html_str.as_bytes());
-    let _ = rewriter.end();
-    String::from_utf8(output).unwrap_or_else(|_| html_str.to_string())
+    post_process_html_impl(html_str, base_dir, table_source_lines, None)
 }
 
 /// Post-process HTML to handle img, anchor, table tags, and add heading IDs using lol_html
@@ -112,12 +34,30 @@ pub(super) fn post_process_html_with_headings(
     headings: &[HeadingInfo],
     table_source_lines: &[(usize, usize)],
 ) -> String {
-    let base_dir = base_dir.to_path_buf();
+    post_process_html_impl(html_str, base_dir, table_source_lines, Some(headings))
+}
+
+/// Common HTML post-processing implementation.
+///
+/// Handles:
+/// - `<table>`: inject `data-source-line` attributes for source mapping
+/// - `<h1>`–`<h6>`: inject `id` attributes for TOC navigation (when `headings` is Some)
+/// - `<img src="…">`: convert relative paths to data URLs with path traversal prevention
+/// - `<a href="…">`: convert local links to `<span data-md-link="…">` for in-app navigation
+fn post_process_html_impl(
+    html_str: &str,
+    base_dir: &Path,
+    table_source_lines: &[(usize, usize)],
+    headings: Option<&[HeadingInfo]>,
+) -> String {
+    let canonical_base = base_dir
+        .canonicalize()
+        .unwrap_or_else(|_| base_dir.to_path_buf());
     let mut output = Vec::new();
-    let heading_index = std::cell::RefCell::new(0usize);
-    let headings = headings.to_vec();
     let table_index = std::cell::RefCell::new(0usize);
     let table_source_lines = table_source_lines.to_vec();
+    let heading_index = std::cell::RefCell::new(0usize);
+    let headings = headings.map(|h| h.to_vec()).unwrap_or_default();
 
     let mut rewriter = HtmlRewriter::new(
         Settings {
@@ -133,7 +73,11 @@ pub(super) fn post_process_html_with_headings(
                     Ok(())
                 }),
                 // Process heading tags: add IDs for TOC navigation
+                // No-op when headings is empty (called from post_process_html_tags)
                 element!("h1, h2, h3, h4, h5, h6", |el| {
+                    if headings.is_empty() {
+                        return Ok(());
+                    }
                     let mut idx = heading_index.borrow_mut();
                     if let Some(heading) = headings.get(*idx) {
                         el.set_attribute("id", &heading.id)?;
@@ -148,8 +92,16 @@ pub(super) fn post_process_html_with_headings(
                             && !src.starts_with("https://")
                             && !src.starts_with("data:")
                         {
-                            let absolute_path = base_dir.join(&src);
+                            let absolute_path = canonical_base.join(&src);
                             if let Ok(canonical_path) = absolute_path.canonicalize() {
+                                // Path traversal prevention: only allow files within base_dir
+                                if !canonical_path.starts_with(&canonical_base) {
+                                    tracing::warn!(
+                                        ?src,
+                                        "Image path escapes base directory, skipping"
+                                    );
+                                    return Ok(());
+                                }
                                 if let Ok(image_data) = std::fs::read(&canonical_path) {
                                     let mime_type = get_mime_type(&canonical_path);
                                     let base64_data = general_purpose::STANDARD.encode(&image_data);
@@ -170,22 +122,16 @@ pub(super) fn post_process_html_with_headings(
                                 .extension()
                                 .and_then(|e| e.to_str())
                             {
-                                // Replace with span element
-                                let escaped_href = href.replace('\'', "\\'");
-                                let onclick = indoc::formatdoc! {r#"
-                                        if (event.button === 0 || event.button === 1) {{
-                                            event.preventDefault();
-                                            window.handleMarkdownLinkClick('{escaped_href}', event.button);
-                                        }}"#
-                                };
                                 el.set_tag_name("span")?;
                                 el.remove_attribute("href");
+                                el.set_attribute("data-md-link", &href)?;
                                 if ext != "md" && ext != "markdown" {
                                     el.set_attribute("class", "md-link md-link-invalid")?;
                                 } else {
                                     el.set_attribute("class", "md-link")?;
                                 }
-                                el.set_attribute("onmousedown", &onclick)?;
+                                el.set_attribute("onmousedown",
+                                    "if(event.button===0||event.button===1){event.preventDefault();window.handleMarkdownLinkClick(this.dataset.mdLink,event.button)}")?;
                             }
                         }
                     }
@@ -249,12 +195,16 @@ mod tests {
         let result = post_process_html_tags(html, Path::new("."), &[]);
 
         assert!(
-            result.contains(r#"<span class="md-link""#),
-            "Should convert to span"
+            result.contains("<span ") && result.contains(r#"class="md-link""#),
+            "Should convert to span with md-link class: {result}"
+        );
+        assert!(
+            result.contains(r#"data-md-link="doc.md""#),
+            "Should store href in data attribute: {result}"
         );
         assert!(
             result.contains("handleMarkdownLinkClick"),
-            "Should add click handler"
+            "Should add click handler: {result}"
         );
         assert!(!result.contains("<a "), "Should not contain anchor tag");
     }
@@ -281,12 +231,12 @@ mod tests {
         let result = post_process_html_tags(html, Path::new("."), &[]);
 
         assert!(
-            result.contains(r#"<span class="md-link md-link-invalid""#),
-            "Should convert to span with md-link and md-link-invalid class"
+            result.contains("<span ") && result.contains(r#"class="md-link md-link-invalid""#),
+            "Should convert to span with md-link and md-link-invalid class: {result}"
         );
         assert!(
             result.contains("handleMarkdownLinkClick"),
-            "Should add click handler for local files"
+            "Should add click handler for local files: {result}"
         );
         assert!(!result.contains("<a "), "Should not contain anchor tag");
     }
