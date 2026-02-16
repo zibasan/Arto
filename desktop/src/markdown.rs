@@ -17,15 +17,22 @@ use pulldown_cmark::{html, Options, Parser};
 use source_lines::{extract_table_source_lines, inject_source_lines};
 use std::path::{Path, PathBuf};
 
-/// Render Markdown to HTML
-pub fn render_to_html(markdown: impl AsRef<str>, base_path: impl AsRef<Path>) -> Result<String> {
-    let markdown = markdown.as_ref();
-    let base_path = base_path.as_ref();
+/// Intermediate result from the common markdown parsing pipeline.
+///
+/// Contains all data needed for post-processing, allowing the two public
+/// render functions to share the parsing logic while differing only in
+/// how they post-process the raw HTML output.
+struct PipelineResult {
+    raw_html: String,
+    frontmatter_html: String,
+    base_dir: PathBuf,
+    table_source_lines: Vec<(usize, usize)>,
+}
 
-    // Enable GitHub Flavored Markdown options
-    let options = Options::all();
-
-    // Get base directory for resolving relative paths
+/// Run the common markdown parsing pipeline: frontmatter extraction,
+/// GitHub alert preprocessing, pulldown-cmark parsing, source line
+/// injection, and HTML generation.
+fn run_pipeline(markdown: &str, base_path: &Path) -> PipelineResult {
     let base_dir = base_path
         .parent()
         .map(|p| p.to_path_buf())
@@ -38,6 +45,7 @@ pub fn render_to_html(markdown: impl AsRef<str>, base_path: impl AsRef<Path>) ->
     let (processed_markdown, line_origins) = process_github_alerts(&content, frontmatter_lines);
 
     // Parse Markdown with offset tracking and process blocks
+    let options = Options::all();
     let parser = Parser::new_ext(&processed_markdown, options).into_offset_iter();
     let parser = extend_table_ranges(parser);
     let parser = process_code_blocks(parser, "mermaid");
@@ -61,20 +69,37 @@ pub fn render_to_html(markdown: impl AsRef<str>, base_path: impl AsRef<Path>) ->
     );
 
     // Convert to HTML
-    let mut html_output = String::new();
-    html::push_html(&mut html_output, parser);
+    let mut raw_html = String::new();
+    html::push_html(&mut raw_html, parser);
 
-    // Post-process HTML to handle all img, anchor, and table tags
-    let html_output = post_process_html_tags(&html_output, base_dir.as_path(), &table_source_lines);
+    PipelineResult {
+        raw_html,
+        frontmatter_html,
+        base_dir,
+        table_source_lines,
+    }
+}
 
-    // Prepend frontmatter table if present
-    let final_output = if frontmatter_html.is_empty() {
+/// Prepend frontmatter HTML to the post-processed output.
+fn prepend_frontmatter(frontmatter_html: &str, html_output: String) -> String {
+    if frontmatter_html.is_empty() {
         html_output
     } else {
         format!("{}\n{}", frontmatter_html, html_output)
-    };
+    }
+}
 
-    Ok(final_output)
+/// Render Markdown to HTML
+pub fn render_to_html(markdown: impl AsRef<str>, base_path: impl AsRef<Path>) -> Result<String> {
+    let pipeline = run_pipeline(markdown.as_ref(), base_path.as_ref());
+
+    let html_output = post_process_html_tags(
+        &pipeline.raw_html,
+        &pipeline.base_dir,
+        &pipeline.table_source_lines,
+    );
+
+    Ok(prepend_frontmatter(&pipeline.frontmatter_html, html_output))
 }
 
 /// Render Markdown to HTML with TOC information
@@ -85,69 +110,20 @@ pub fn render_to_html_with_toc(
     base_path: impl AsRef<Path>,
 ) -> Result<(String, Vec<HeadingInfo>)> {
     let markdown = markdown.as_ref();
-    let base_path = base_path.as_ref();
-
-    // Extract headings first
     let headings = extract_headings(markdown);
+    let pipeline = run_pipeline(markdown, base_path.as_ref());
 
-    // Enable GitHub Flavored Markdown options
-    let options = Options::all();
-
-    // Get base directory for resolving relative paths
-    let base_dir = base_path
-        .parent()
-        .map(|p| p.to_path_buf())
-        .unwrap_or_else(|| PathBuf::from("."));
-
-    // Extract frontmatter if present
-    let (frontmatter_html, content, frontmatter_lines) = extract_and_render_frontmatter(markdown);
-
-    // Process GitHub alerts (returns line origin mapping for correct source line tracking)
-    let (processed_markdown, line_origins) = process_github_alerts(&content, frontmatter_lines);
-
-    // Parse Markdown with offset tracking and process blocks
-    let parser = Parser::new_ext(&processed_markdown, options).into_offset_iter();
-    let parser = extend_table_ranges(parser);
-    let parser = process_code_blocks(parser, "mermaid");
-    let parser = process_code_blocks(parser, "math");
-    let parser = process_math_expressions(parser);
-
-    // Collect events to extract table source lines before inject_source_lines consumes ranges
-    let events: Vec<_> = parser.collect();
-    let table_source_lines = extract_table_source_lines(
-        &events,
-        &processed_markdown,
-        &line_origins,
-        frontmatter_lines,
-    );
-
-    let parser = inject_source_lines(
-        events.into_iter(),
-        &processed_markdown,
-        &line_origins,
-        frontmatter_lines,
-    );
-
-    // Convert to HTML
-    let mut html_output = String::new();
-    html::push_html(&mut html_output, parser);
-
-    // Post-process HTML with heading IDs and table source lines
     let html_output = post_process_html_with_headings(
-        &html_output,
-        base_dir.as_path(),
+        &pipeline.raw_html,
+        &pipeline.base_dir,
         &headings,
-        &table_source_lines,
+        &pipeline.table_source_lines,
     );
 
-    // Prepend frontmatter table if present
-    let final_output = if frontmatter_html.is_empty() {
-        html_output
-    } else {
-        format!("{}\n{}", frontmatter_html, html_output)
-    };
-
-    Ok((final_output, headings))
+    Ok((
+        prepend_frontmatter(&pipeline.frontmatter_html, html_output),
+        headings,
+    ))
 }
 
 #[cfg(test)]
@@ -386,6 +362,65 @@ mod tests {
             html.contains("data-source-line="),
             "Headings should have source line attributes"
         );
+    }
+
+    // ========================================================================
+    // Output equivalence characterization tests (Phase 0-2)
+    // ========================================================================
+
+    /// Characterization: render_to_html and render_to_html_with_toc produce
+    /// equivalent HTML output except for heading IDs.
+    /// This guarantees safety for Phase 3-1 common pipeline extraction.
+    #[test]
+    fn test_render_to_html_and_with_toc_produce_equivalent_output() {
+        let temp = TempDir::new().unwrap();
+        let md_path = temp.path().join("test.md");
+        let markdown = indoc! {"
+            # Heading 1
+
+            Some paragraph with **bold** and `code`.
+
+            ## Heading 2
+
+            - list item 1
+            - list item 2
+
+            ```mermaid
+            graph TD
+                A --> B
+            ```
+
+            > [!NOTE]
+            > This is a note
+        "};
+
+        let html_basic = render_to_html(markdown, &md_path).unwrap();
+        let (html_toc, headings) = render_to_html_with_toc(markdown, &md_path).unwrap();
+
+        // Strip heading IDs for comparison (without regex dependency)
+        fn strip_heading_ids(s: &str) -> String {
+            let mut result = s.to_string();
+            while let Some(start) = result.find(" id=\"") {
+                if let Some(end) = result[start + 5..].find('"') {
+                    result.replace_range(start..start + 5 + end + 1, "");
+                } else {
+                    break;
+                }
+            }
+            result
+        }
+        let stripped_basic = strip_heading_ids(&html_basic);
+        let stripped_toc = strip_heading_ids(&html_toc);
+
+        assert_eq!(
+            stripped_basic, stripped_toc,
+            "Both functions should produce identical HTML except for heading IDs"
+        );
+
+        // Verify TOC headings were extracted
+        assert_eq!(headings.len(), 2);
+        assert_eq!(headings[0].text, "Heading 1");
+        assert_eq!(headings[1].text, "Heading 2");
     }
 
     // ========================================================================

@@ -62,7 +62,7 @@ export async function rasterizeMermaidBlock(
     const svg = findSvgElement(element);
     const dimensions = getSvgDimensions(svg);
     const svgDataUrl = convertSvgToDataUrl(svg, dimensions);
-    return window.Arto.rasterizeImage(svgDataUrl, opaque);
+    return window.Arto.rasterize.image(svgDataUrl, opaque);
   } catch (error) {
     console.error("Failed to rasterize Mermaid block:", error);
     return null;

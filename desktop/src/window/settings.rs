@@ -87,6 +87,21 @@ fn choose_by_behavior<T>(
     }
 }
 
+/// Resolve a preference by trying the last focused window's AppState first,
+/// falling back to PersistedState.
+///
+/// **Fallback chain:** last focused window's `AppState` → `PersistedState` (state.json)
+fn resolve_from_state_or_persisted<T>(
+    from_state: impl FnOnce(&crate::state::AppState) -> T,
+    from_persisted: impl FnOnce(&PersistedState) -> T,
+) -> T {
+    if let Some(state) = get_last_focused_window_state() {
+        from_state(&state)
+    } else {
+        from_persisted(&PersistedState::load())
+    }
+}
+
 fn resolve_window_size(config: WindowSize, max_size: LogicalSize<u32>) -> LogicalSize<u32> {
     let max_size_f64 = LogicalSize::new(max_size.width as f64, max_size.height as f64);
     let size = config.to_logical_size(&max_size_f64);
@@ -245,9 +260,10 @@ pub fn get_theme_preference(is_first_window: bool) -> ThemePreference {
         cfg.theme.on_new_window,
         || cfg.theme.default_theme,
         || {
-            get_last_focused_window_state()
-                .map(|state| *state.current_theme.read())
-                .unwrap_or_else(|| PersistedState::load().theme)
+            resolve_from_state_or_persisted(
+                |state| *state.current_theme.read(),
+                |persisted| persisted.theme,
+            )
         },
     );
     ThemePreference { theme }
@@ -283,23 +299,23 @@ pub fn get_sidebar_preference(is_first_window: bool) -> SidebarPreference {
             zoom_level: cfg.sidebar.default_zoom_level,
         },
         || {
-            if let Some(state) = get_last_focused_window_state() {
-                let sidebar = state.sidebar.read();
-                SidebarPreference {
-                    open: sidebar.open,
-                    width: sidebar.width,
-                    show_all_files: sidebar.show_all_files,
-                    zoom_level: sidebar.zoom_level,
-                }
-            } else {
-                let persisted = PersistedState::load();
-                SidebarPreference {
+            resolve_from_state_or_persisted(
+                |state| {
+                    let sidebar = state.sidebar.read();
+                    SidebarPreference {
+                        open: sidebar.open,
+                        width: sidebar.width,
+                        show_all_files: sidebar.show_all_files,
+                        zoom_level: sidebar.zoom_level,
+                    }
+                },
+                |persisted| SidebarPreference {
                     open: persisted.sidebar_open,
                     width: persisted.sidebar_width,
                     show_all_files: persisted.sidebar_show_all_files,
                     zoom_level: persisted.sidebar_zoom_level,
-                }
-            }
+                },
+            )
         },
     );
     // Normalize zoom level to valid range with 0.1 step
@@ -322,22 +338,20 @@ pub fn get_right_sidebar_preference(is_first_window: bool) -> RightSidebarPrefer
             zoom_level: cfg.right_sidebar.default_zoom_level,
         },
         || {
-            if let Some(state) = get_last_focused_window_state() {
-                RightSidebarPreference {
+            resolve_from_state_or_persisted(
+                |state| RightSidebarPreference {
                     open: *state.right_sidebar_open.read(),
                     width: *state.right_sidebar_width.read(),
                     tab: *state.right_sidebar_tab.read(),
                     zoom_level: *state.right_sidebar_zoom_level.read(),
-                }
-            } else {
-                let persisted = PersistedState::load();
-                RightSidebarPreference {
+                },
+                |persisted| RightSidebarPreference {
                     open: persisted.right_sidebar_open,
                     width: persisted.right_sidebar_width,
                     tab: persisted.right_sidebar_tab,
                     zoom_level: persisted.right_sidebar_zoom_level,
-                }
-            }
+                },
+            )
         },
     );
     // Normalize zoom level to valid range with 0.1 step
@@ -355,9 +369,10 @@ pub fn get_zoom_preference(is_first_window: bool) -> ZoomPreference {
         cfg.zoom.on_new_window,
         || cfg.zoom.default_zoom_level,
         || {
-            get_last_focused_window_state()
-                .map(|state| *state.zoom_level.read())
-                .unwrap_or_else(|| PersistedState::load().zoom_level)
+            resolve_from_state_or_persisted(
+                |state| *state.zoom_level.read(),
+                |persisted| persisted.zoom_level,
+            )
         },
     );
     // Normalize to 0.1 step grid and clamp to safe range

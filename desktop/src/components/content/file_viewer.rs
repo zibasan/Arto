@@ -183,7 +183,7 @@ fn handle_scroll_position(state: &mut AppState) {
                         }}
                     }}, 5000);
                 }}
-                window.Arto.onRenderComplete(() => {{
+                window.Arto.render.onComplete(() => {{
                     if (observer) {{
                         observer.disconnect();
                         observer = null;
@@ -503,7 +503,7 @@ fn use_context_menu_handler(file: PathBuf, base_dir: PathBuf) {
         // Setup JS context menu handler using the exported function
         let mut eval_provider = document::eval(indoc::indoc! {r#"
             // Setup context menu handler
-            window.Arto.setupContextMenu((data) => {
+            window.Arto.contextMenu.setup((data) => {
                 dioxus.send(data);
             });
         "#});
