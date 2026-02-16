@@ -31,6 +31,37 @@ struct Cli {
 }
 
 fn main() {
+    // Re-exec with the canonical path if launched via a symlink.
+    //
+    // On macOS, `current_exe()` uses `_NSGetExecutablePath` which may return the
+    // symlink path (e.g., /opt/homebrew/bin/arto) instead of the real binary
+    // inside the .app bundle. Dioxus's asset resolver (`get_asset_root()`) then
+    // computes the wrong Resources directory, causing CSS/JS to fail to load.
+    //
+    // Linux is unaffected because `current_exe()` reads `/proc/self/exe` which
+    // always resolves symlinks.
+    //
+    // See: https://github.com/arto-app/Arto/issues/121
+    #[cfg(target_os = "macos")]
+    {
+        use std::os::unix::process::CommandExt;
+        if let Ok(exe) = std::env::current_exe() {
+            if let Ok(canonical) = exe.canonicalize() {
+                if exe != canonical {
+                    let err = std::process::Command::new(&canonical)
+                        .args(std::env::args_os().skip(1))
+                        .exec();
+                    eprintln!(
+                        "Failed to re-exec with canonical path (from {} to {}): {err}",
+                        exe.display(),
+                        canonical.display(),
+                    );
+                    std::process::exit(1);
+                }
+            }
+        }
+    }
+
     let cli = Cli::parse();
     if let arto::RunResult::SentToExistingInstance = arto::run(cli.paths) {
         std::process::exit(0);
