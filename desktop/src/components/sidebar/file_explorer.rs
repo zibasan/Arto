@@ -12,25 +12,57 @@ use crate::state::AppState;
 use crate::utils::{file::is_markdown_file, file_operations};
 use crate::watcher::FILE_WATCHER;
 
-// Sort entries: directories first, then files, both alphabetically
-fn sort_entries(items: &mut [PathBuf]) {
-    items.sort_by(|a, b| {
-        let a_is_dir = a.is_dir();
-        let b_is_dir = b.is_dir();
+/// A directory entry with pre-computed file type from `readdir()`.
+///
+/// On macOS/APFS, `DirEntry::file_type()` reads the `d_type` field from the
+/// `readdir()` result without issuing a `stat()` syscall. This avoids triggering
+/// macOS TCC permission dialogs for protected directories (e.g. ~/Music).
+struct FileEntry {
+    path: PathBuf,
+    is_dir: bool,
+}
 
-        match (a_is_dir, b_is_dir) {
-            (true, false) => Ordering::Less,
-            (false, true) => Ordering::Greater,
-            _ => a.file_name().cmp(&b.file_name()),
-        }
+// Sort entries: directories first, then files, both alphabetically
+fn sort_entries(items: &mut [FileEntry]) {
+    items.sort_by(|a, b| match (a.is_dir, b.is_dir) {
+        (true, false) => Ordering::Less,
+        (false, true) => Ordering::Greater,
+        _ => a.path.file_name().cmp(&b.path.file_name()),
     });
 }
 
-// Read and sort directory entries
-fn read_sorted_entries(path: &PathBuf) -> Vec<PathBuf> {
+// Read and sort directory entries using DirEntry::file_type() to avoid stat() calls
+fn read_sorted_entries(path: &PathBuf) -> Vec<FileEntry> {
     match fs::read_dir(path) {
         Ok(entries) => {
-            let mut items: Vec<_> = entries.filter_map(|e| e.ok()).map(|e| e.path()).collect();
+            let mut items: Vec<_> = entries
+                .filter_map(|e| e.ok())
+                .filter_map(|e| {
+                    let file_type = match e.file_type() {
+                        Ok(ft) => ft,
+                        Err(err) => {
+                            tracing::debug!(?err, path = ?e.path(), "Skipping inaccessible entry");
+                            return None;
+                        }
+                    };
+                    // For symlinks, follow with metadata() to resolve actual type
+                    let is_dir = if file_type.is_symlink() {
+                        match fs::metadata(e.path()) {
+                            Ok(m) => m.is_dir(),
+                            Err(err) => {
+                                tracing::debug!(?err, path = ?e.path(), "Failed to resolve symlink");
+                                false
+                            }
+                        }
+                    } else {
+                        file_type.is_dir()
+                    };
+                    Some(FileEntry {
+                        path: e.path(),
+                        is_dir,
+                    })
+                })
+                .collect();
             sort_entries(&mut items);
             items
         }
@@ -310,7 +342,7 @@ fn DirectoryTree(path: PathBuf, refresh_counter: Signal<u32>) -> Element {
             class: "left-sidebar-tree",
             key: "{refresh_counter}",
             for entry in entries {
-                FileTreeNode { path: entry, depth: 0, refresh_counter }
+                FileTreeNode { path: entry.path, is_dir: entry.is_dir, depth: 0, refresh_counter }
             }
         }
     }
@@ -334,16 +366,20 @@ fn DirectoryChildren(path: PathBuf, depth: usize, refresh_counter: Signal<u32>) 
     let children = read_sorted_entries(&path);
     rsx! {
         for child in children {
-            FileTreeNode { path: child, depth: depth + 1, refresh_counter }
+            FileTreeNode { path: child.path, is_dir: child.is_dir, depth: depth + 1, refresh_counter }
         }
     }
 }
 
 #[component]
-fn FileTreeNode(path: PathBuf, depth: usize, mut refresh_counter: Signal<u32>) -> Element {
+fn FileTreeNode(
+    path: PathBuf,
+    is_dir: bool,
+    depth: usize,
+    mut refresh_counter: Signal<u32>,
+) -> Element {
     let mut state = use_context::<AppState>();
 
-    let is_dir = path.is_dir();
     let is_expanded = state.sidebar.read().expanded_dirs.contains(&path);
     let show_all_files = state.sidebar.read().show_all_files;
 
