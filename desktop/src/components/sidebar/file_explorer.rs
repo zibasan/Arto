@@ -316,6 +316,29 @@ fn DirectoryTree(path: PathBuf, refresh_counter: Signal<u32>) -> Element {
     }
 }
 
+/// Renders the children of an expanded directory.
+///
+/// Separated from `FileTreeNode` so that Dioxus component memoization prevents
+/// re-reading the filesystem when only unrelated state (tabs, sidebar toggles)
+/// changes — `DirectoryChildren` only re-renders when `path` or
+/// `refresh_counter` actually change.
+///
+/// **Invalidation triggers:**
+/// - `path` changes (user navigates to a different directory)
+/// - `refresh_counter` increments (file watcher detects filesystem changes)
+#[component]
+fn DirectoryChildren(path: PathBuf, depth: usize, refresh_counter: Signal<u32>) -> Element {
+    // Subscribe to the signal so Dioxus re-runs this component when the
+    // counter increments (file watcher detected filesystem changes).
+    let _ = refresh_counter.read();
+    let children = read_sorted_entries(&path);
+    rsx! {
+        for child in children {
+            FileTreeNode { path: child, depth: depth + 1, refresh_counter }
+        }
+    }
+}
+
 #[component]
 fn FileTreeNode(path: PathBuf, depth: usize, mut refresh_counter: Signal<u32>) -> Element {
     let mut state = use_context::<AppState>();
@@ -594,18 +617,12 @@ fn FileTreeNode(path: PathBuf, depth: usize, mut refresh_counter: Signal<u32>) -
             }
 
             // Expanded directory children
+            // DirectoryChildren is a separate component so that Dioxus's
+            // component memoization skips re-rendering (and re-reading the
+            // filesystem) when only unrelated state changes (tabs, sidebar
+            // toggles, etc.).
             if is_dir && is_expanded {
-                {
-                    let children = read_sorted_entries(&path);
-                    rsx! {
-                        div {
-                            key: "{refresh_counter}",
-                            for child in children {
-                                FileTreeNode { path: child, depth: depth + 1, refresh_counter }
-                            }
-                        }
-                    }
-                }
+                DirectoryChildren { path: path.clone(), depth, refresh_counter }
             }
         }
 
