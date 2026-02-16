@@ -156,6 +156,128 @@ mod tests {
     use std::fs;
     use tempfile::TempDir;
 
+    // ========================================================================
+    // Security regression tests
+    // These verify the current hardened behavior (e.g. path traversal blocked,
+    // no unsafe interpolation) and guard against security regressions.
+    // If behavior is intentionally changed, update both the code and these tests.
+    // ========================================================================
+
+    /// Path traversal images must NOT be converted to data URLs.
+    /// The base_dir boundary check prevents reading files outside base_dir.
+    #[test]
+    fn test_path_traversal_img_src_blocked() {
+        let temp = TempDir::new().unwrap();
+        let sub = temp.path().join("sub");
+        fs::create_dir(&sub).unwrap();
+        // Create secret.png OUTSIDE base_dir (sub/)
+        let secret = temp.path().join("secret.png");
+        fs::write(&secret, [0x89, 0x50, 0x4E, 0x47]).unwrap();
+
+        let html = r#"<img src="../secret.png">"#;
+        let result = post_process_html_tags(html, &sub, &[]);
+
+        // Path traversal should be blocked: image NOT converted to data URL
+        assert!(
+            !result.contains("data:image/png;base64,"),
+            "Path-traversal images must not be converted to data URLs: {result}"
+        );
+        // Original src should remain unchanged
+        assert!(
+            result.contains(r#"src="../secret.png""#),
+            "Original src attribute should be preserved: {result}"
+        );
+    }
+
+    /// Images within base_dir should still be converted normally
+    #[test]
+    fn test_path_within_base_dir_still_converted() {
+        let temp = TempDir::new().unwrap();
+        let sub = temp.path().join("sub");
+        fs::create_dir(&sub).unwrap();
+        let image = sub.join("image.png");
+        fs::write(&image, [0x89, 0x50, 0x4E, 0x47]).unwrap();
+
+        let html = r#"<img src="image.png">"#;
+        let result = post_process_html_tags(html, &sub, &[]);
+
+        assert!(
+            result.contains("data:image/png;base64,"),
+            "Images within base_dir should be converted: {result}"
+        );
+    }
+
+    /// Single quotes in href are safely stored in data-md-link attribute
+    #[test]
+    fn test_link_single_quote_in_data_attribute() {
+        let html = r#"<a href="file's.md">link</a>"#;
+        let result = post_process_html_tags(html, Path::new("/tmp"), &[]);
+        // href is stored in data-md-link, not interpolated into JS
+        assert!(
+            result.contains("data-md-link"),
+            "Should use data-md-link attribute: {result}"
+        );
+        assert!(
+            result.contains("this.dataset.mdLink"),
+            "Should read href from dataset: {result}"
+        );
+    }
+
+    /// Special chars in href cannot cause XSS with data-* attribute pattern
+    #[test]
+    fn test_link_special_chars_safe_with_data_attribute() {
+        let html = r#"<a href="test'-alert('xss').md">link</a>"#;
+        let result = post_process_html_tags(html, Path::new("/tmp"), &[]);
+        // href is stored in data attribute, never interpolated into JS string
+        assert!(
+            result.contains("data-md-link"),
+            "Should use data-md-link attribute: {result}"
+        );
+        // The onmousedown handler reads from dataset, not from interpolated string
+        assert!(
+            !result.contains("handleMarkdownLinkClick('"),
+            "Should NOT contain interpolated href in JS string: {result}"
+        );
+        assert!(
+            result.contains("this.dataset.mdLink"),
+            "Should read href safely from dataset: {result}"
+        );
+    }
+
+    /// Verify that crafted href payloads cannot inject executable JavaScript.
+    /// The `data-md-link` + `dataset.mdLink` pattern ensures the value is never
+    /// interpolated into a JS string literal, so quote escapes are harmless.
+    #[test]
+    fn test_xss_injection_via_href_payload() {
+        // Payload with .md extension so the anchor handler converts the link,
+        // plus quotes and JS that would be dangerous if interpolated into JS.
+        let html = r#"<a href="evil');alert(1).md">link</a>"#;
+        let result = post_process_html_tags(html, Path::new("/tmp"), &[]);
+
+        // The href must be stored in data-md-link, NOT spliced into inline JS
+        assert!(
+            result.contains("data-md-link"),
+            "Href should be stored in data-md-link: {result}"
+        );
+        // The onmousedown handler must read from dataset, never from interpolation
+        assert!(
+            result.contains("this.dataset.mdLink"),
+            "Should read href safely from dataset: {result}"
+        );
+        assert!(
+            !result.contains("handleMarkdownLinkClick('"),
+            "Href must NOT be interpolated into JS string: {result}"
+        );
+    }
+
+    /// Characterization: HTTP URLs are not converted (this is correct behavior)
+    #[test]
+    fn test_http_urls_not_converted() {
+        let html = r#"<img src="https://example.com/img.png">"#;
+        let result = post_process_html_tags(html, Path::new("/tmp"), &[]);
+        assert!(result.contains("https://example.com/img.png"));
+    }
+
     #[test]
     fn test_get_mime_type() {
         assert_eq!(get_mime_type(Path::new("test.png")), "image/png");

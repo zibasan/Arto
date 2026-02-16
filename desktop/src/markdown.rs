@@ -365,6 +365,65 @@ mod tests {
     }
 
     // ========================================================================
+    // Output equivalence characterization tests (Phase 0-2)
+    // ========================================================================
+
+    /// Characterization: render_to_html and render_to_html_with_toc produce
+    /// equivalent HTML output except for heading IDs.
+    /// This guarantees safety for Phase 3-1 common pipeline extraction.
+    #[test]
+    fn test_render_to_html_and_with_toc_produce_equivalent_output() {
+        let temp = TempDir::new().unwrap();
+        let md_path = temp.path().join("test.md");
+        let markdown = indoc! {"
+            # Heading 1
+
+            Some paragraph with **bold** and `code`.
+
+            ## Heading 2
+
+            - list item 1
+            - list item 2
+
+            ```mermaid
+            graph TD
+                A --> B
+            ```
+
+            > [!NOTE]
+            > This is a note
+        "};
+
+        let html_basic = render_to_html(markdown, &md_path).unwrap();
+        let (html_toc, headings) = render_to_html_with_toc(markdown, &md_path).unwrap();
+
+        // Strip heading IDs for comparison (without regex dependency)
+        fn strip_heading_ids(s: &str) -> String {
+            let mut result = s.to_string();
+            while let Some(start) = result.find(" id=\"") {
+                if let Some(end) = result[start + 5..].find('"') {
+                    result.replace_range(start..start + 5 + end + 1, "");
+                } else {
+                    break;
+                }
+            }
+            result
+        }
+        let stripped_basic = strip_heading_ids(&html_basic);
+        let stripped_toc = strip_heading_ids(&html_toc);
+
+        assert_eq!(
+            stripped_basic, stripped_toc,
+            "Both functions should produce identical HTML except for heading IDs"
+        );
+
+        // Verify TOC headings were extracted
+        assert_eq!(headings.len(), 2);
+        assert_eq!(headings[0].text, "Heading 1");
+        assert_eq!(headings[1].text, "Heading 2");
+    }
+
+    // ========================================================================
     // Source line annotation integration tests
     // ========================================================================
 
