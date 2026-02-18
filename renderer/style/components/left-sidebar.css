@@ -14,7 +14,7 @@
 }
 
 .left-sidebar.visible {
-  min-width: 280px;
+  min-width: 200px;
 }
 
 .left-sidebar.resizing {
@@ -270,6 +270,11 @@
   background: var(--bg-color);
 }
 
+.left-sidebar-header-toolbar-button:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+}
+
 .left-sidebar-header-toolbar-button .icon {
   color: var(--text-secondary);
   opacity: 0.7;
@@ -466,4 +471,11 @@
 .left-sidebar-header-actions .bookmark-button.bookmarked {
   opacity: var(--opacity-hover);
   color: var(--accent-bg);
+}
+
+/* Overlay mode: full height + drop shadow for depth */
+.sidebar-overlay-wrapper .left-sidebar {
+  height: 100%;
+  box-shadow: var(--shadow-lg);
+  min-width: 0; /* Override base min-width so configured inline width works in overlay */
 }

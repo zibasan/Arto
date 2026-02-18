@@ -116,7 +116,7 @@ pub fn RightSidebarTab(
                 }
                 SliderInput {
                     value: right_sidebar_cfg.default_width,
-                    min: 150.0,
+                    min: 220.0,
                     max: 400.0,
                     step: 10.0,
                     unit: "px".to_string(),

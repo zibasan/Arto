@@ -19,7 +19,7 @@
 }
 
 .right-sidebar.visible {
-  min-width: 280px;
+  min-width: 220px;
 }
 
 .right-sidebar.resizing {
@@ -150,4 +150,43 @@
 .right-sidebar-search::-webkit-scrollbar-track,
 .right-sidebar-contents::-webkit-scrollbar-track {
   background: var(--scrollbar-track);
+}
+
+/* Overlay mode: full height + drop shadow for depth */
+.sidebar-overlay-wrapper .right-sidebar {
+  height: 100%;
+  box-shadow: var(--shadow-lg);
+  min-width: 0; /* Override base min-width so configured inline width works in overlay */
+}
+
+/* Pin button in tab bar */
+.right-sidebar-pin-button {
+  margin-left: auto;
+  padding: 4px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: var(--opacity-muted);
+  transition:
+    opacity var(--transition-normal),
+    background-color var(--transition-fast) ease;
+}
+
+.right-sidebar-pin-button:hover {
+  opacity: 1;
+  background-color: var(--hover-bg);
+}
+
+.right-sidebar-pin-button:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+}
+
+.right-sidebar-pin-button.pinned {
+  opacity: var(--opacity-hover);
 }

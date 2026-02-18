@@ -23,12 +23,13 @@ pub enum RightSidebarTab {
 #[derive(Props, Clone, PartialEq)]
 pub struct RightSidebarProps {
     pub headings: Vec<HeadingInfo>,
+    pub on_pin_toggle: Option<EventHandler<()>>,
+    pub on_resize_change: Option<EventHandler<bool>>,
 }
 
 #[component]
 pub fn RightSidebar(props: RightSidebarProps) -> Element {
     let mut state = use_context::<AppState>();
-    let is_open = *state.right_sidebar_open.read();
     let width = *state.right_sidebar_width.read();
     let active_tab = *state.right_sidebar_tab.read();
     let zoom_level = *state.right_sidebar_zoom_level.read();
@@ -39,26 +40,18 @@ pub fn RightSidebar(props: RightSidebarProps) -> Element {
     // Get data for each tab
     let headings = props.headings.clone();
 
-    let outer_style = if is_open {
-        format!("width: {}px;", width)
-    } else {
-        "width: 0;".to_string()
-    };
-
+    let outer_style = format!("width: {}px;", width);
     let inner_style = format!("zoom: {};", zoom_level);
 
     rsx! {
         div {
-            class: "right-sidebar",
-            class: if is_open { "visible" },
+            class: "right-sidebar visible",
             class: if is_resizing() { "resizing" },
             class: if is_panel_focused { "panel-focused" },
             style: "{outer_style}",
 
             // Resize handle
-            if is_open {
-                RightSidebarResizeHandle { is_resizing }
-            }
+            RightSidebarResizeHandle { is_resizing, on_resize_change: props.on_resize_change }
 
             // Inner wrapper with zoom applied
             div {
@@ -69,6 +62,7 @@ pub fn RightSidebar(props: RightSidebarProps) -> Element {
                 TabBar {
                     active_tab,
                     on_change: move |tab| state.set_right_sidebar_tab(tab),
+                    on_pin_toggle: props.on_pin_toggle,
                 }
 
                 // Tab content
@@ -91,7 +85,10 @@ pub fn RightSidebar(props: RightSidebarProps) -> Element {
 }
 
 #[component]
-fn RightSidebarResizeHandle(is_resizing: Signal<bool>) -> Element {
+fn RightSidebarResizeHandle(
+    is_resizing: Signal<bool>,
+    on_resize_change: Option<EventHandler<bool>>,
+) -> Element {
     use dioxus::document;
     let mut state = use_context::<AppState>();
 
@@ -102,6 +99,9 @@ fn RightSidebarResizeHandle(is_resizing: Signal<bool>) -> Element {
             onmousedown: move |evt| {
                 evt.prevent_default();
                 is_resizing.set(true);
+                if let Some(handler) = on_resize_change {
+                    handler.call(true);
+                }
                 let start_x = evt.page_coordinates().x;
                 let start_width = *state.right_sidebar_width.read();
 
@@ -138,12 +138,15 @@ fn RightSidebarResizeHandle(is_resizing: Signal<bool>) -> Element {
                                     // Right sidebar resizes from left edge, so delta is inverted
                                     let delta = start_x - x;
                                     let max_width = msg.max_width.unwrap_or(400.0);
-                                    let new_width = (start_width + delta).clamp(150.0, max_width);
+                                    let new_width = (start_width + delta).clamp(220.0, max_width);
                                     state.set_right_sidebar_width(new_width);
                                 }
                             }
                             "end" => {
                                 is_resizing.set(false);
+                                if let Some(handler) = on_resize_change {
+                                    handler.call(false);
+                                }
                                 break;
                             }
                             _ => {}

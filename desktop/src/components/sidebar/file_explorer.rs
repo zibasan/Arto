@@ -75,7 +75,7 @@ fn read_sorted_entries(path: &PathBuf) -> Vec<FileEntry> {
 }
 
 #[component]
-pub fn FileExplorer() -> Element {
+pub fn FileExplorer(on_pin_toggle: Option<EventHandler<()>>) -> Element {
     let state = use_context::<AppState>();
     let root_directory = state.sidebar.read().root_directory.clone();
 
@@ -91,7 +91,7 @@ pub fn FileExplorer() -> Element {
             key: "{refresh_counter}",
 
             if let Some(root) = root_directory {
-                DirectoryNavigation { current_dir: root.clone(), refresh_counter }
+                DirectoryNavigation { current_dir: root.clone(), refresh_counter, on_pin_toggle }
                 DirectoryTree { path: root, refresh_counter }
             } else {
                 div {
@@ -107,8 +107,13 @@ pub fn FileExplorer() -> Element {
 }
 
 #[component]
-fn DirectoryNavigation(current_dir: PathBuf, mut refresh_counter: Signal<u32>) -> Element {
+fn DirectoryNavigation(
+    current_dir: PathBuf,
+    mut refresh_counter: Signal<u32>,
+    on_pin_toggle: Option<EventHandler<()>>,
+) -> Element {
     let mut state = use_context::<AppState>();
+    let is_pinned = state.sidebar.read().pinned;
     let sidebar = state.sidebar.read();
     let show_all_files = sidebar.show_all_files;
     let can_go_back = sidebar.can_go_back();
@@ -313,7 +318,7 @@ fn DirectoryNavigation(current_dir: PathBuf, mut refresh_counter: Signal<u32>) -
                 }
             }
 
-            // Toolbar buttons container (visibility toggle only)
+            // Toolbar buttons container
             div {
                 class: "left-sidebar-header-toolbar",
 
@@ -327,6 +332,20 @@ fn DirectoryNavigation(current_dir: PathBuf, mut refresh_counter: Signal<u32>) -
                     Icon {
                         name: if show_all_files { IconName::Eye } else { IconName::EyeOff },
                         size: 20,
+                    }
+                }
+
+                // Pin/Unpin button
+                if let Some(handler) = on_pin_toggle {
+                    button {
+                        class: "left-sidebar-header-toolbar-button",
+                        class: if is_pinned { "pinned" },
+                        title: if is_pinned { "Unpin sidebar" } else { "Pin sidebar" },
+                        onclick: move |_| handler.call(()),
+                        Icon {
+                            name: if is_pinned { IconName::PinFilled } else { IconName::Pin },
+                            size: 20,
+                        }
                     }
                 }
             }

@@ -8,10 +8,12 @@ use dioxus::prelude::*;
 use crate::state::{AppState, FocusedPanel};
 
 #[component]
-pub fn Sidebar() -> Element {
+pub fn Sidebar(
+    on_pin_toggle: Option<EventHandler<()>>,
+    on_resize_change: Option<EventHandler<bool>>,
+) -> Element {
     let mut state = use_context::<AppState>();
     let sidebar_state = state.sidebar.read();
-    let is_visible = sidebar_state.open;
     let width = sidebar_state.width;
     let zoom_level = sidebar_state.zoom_level;
     drop(sidebar_state);
@@ -20,18 +22,12 @@ pub fn Sidebar() -> Element {
         focused_panel == FocusedPanel::LeftSidebar || focused_panel == FocusedPanel::QuickAccess;
     let mut is_resizing = use_signal(|| false);
 
-    let outer_style = if is_visible {
-        format!("width: {}px;", width)
-    } else {
-        "width: 0;".to_string()
-    };
-
+    let outer_style = format!("width: {}px;", width);
     let inner_style = format!("zoom: {};", zoom_level);
 
     rsx! {
         div {
-            class: "left-sidebar",
-            class: if is_visible { "visible" },
+            class: "left-sidebar visible",
             class: if is_resizing() { "resizing" },
             class: if is_panel_focused { "panel-focused" },
             style: "{outer_style}",
@@ -42,17 +38,21 @@ pub fn Sidebar() -> Element {
                 style: "{inner_style}",
 
                 // File explorer content (always mounted for animation)
-                file_explorer::FileExplorer {}
+                file_explorer::FileExplorer {
+                    on_pin_toggle,
+                }
             }
 
-            // Resize handle (only when visible)
-            if is_visible {
-                div {
-                    class: "left-sidebar-resize-handle",
-                    class: if is_resizing() { "resizing" },
+            // Resize handle
+            div {
+                class: "left-sidebar-resize-handle",
+                class: if is_resizing() { "resizing" },
                     onmousedown: move |evt| {
                         evt.prevent_default();
                         is_resizing.set(true);
+                        if let Some(handler) = on_resize_change {
+                            handler.call(true);
+                        }
                         let start_x = evt.page_coordinates().x;
                         let start_width = state.sidebar.read().width;
 
@@ -94,6 +94,9 @@ pub fn Sidebar() -> Element {
                                     }
                                     "end" => {
                                         is_resizing.set(false);
+                                        if let Some(handler) = on_resize_change {
+                                            handler.call(false);
+                                        }
                                         break;
                                     }
                                     _ => {}
@@ -101,7 +104,6 @@ pub fn Sidebar() -> Element {
                             }
                         });
                     }
-                }
             }
         }
     }
