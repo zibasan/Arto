@@ -99,7 +99,7 @@ pub fn dispatch_action(action: &Action, mut state: AppState) {
             crate::window::close_all_main_windows();
         }
         Action::WindowToggleSidebar => {
-            let closing = state.sidebar.read().open;
+            let closing = state.sidebar.read().pinned;
             state.toggle_sidebar();
             // Return focus to Content when closing a focused sidebar panel
             if closing {
@@ -110,7 +110,7 @@ pub fn dispatch_action(action: &Action, mut state: AppState) {
             }
         }
         Action::WindowToggleRightSidebar => {
-            let closing = *state.right_sidebar_open.read();
+            let closing = *state.right_sidebar_pinned.read();
             state.toggle_right_sidebar();
             if closing && *state.focused_panel.read() == FocusedPanel::RightSidebar {
                 state.focused_panel.set(FocusedPanel::Content);
@@ -154,9 +154,10 @@ pub fn dispatch_action(action: &Action, mut state: AppState) {
 
         // --- Focus ---
         Action::FocusLeftSidebar => {
-            // Open sidebar if closed, then focus it
-            if !state.sidebar.read().open {
-                state.toggle_sidebar();
+            // Show overlay if not pinned, then focus it
+            if !state.sidebar.read().pinned {
+                state.left_hover_active.set(true);
+                state.right_hover_active.set(false);
             }
             state.focused_panel.set(FocusedPanel::LeftSidebar);
             // Initialize cursor to first item if not set
@@ -170,9 +171,10 @@ pub fn dispatch_action(action: &Action, mut state: AppState) {
             }
         }
         Action::FocusRightSidebar => {
-            // Open right sidebar if closed, then focus it
-            if !*state.right_sidebar_open.read() {
-                state.toggle_right_sidebar();
+            // Show overlay if not pinned, then focus it
+            if !*state.right_sidebar_pinned.read() {
+                state.right_hover_active.set(true);
+                state.left_hover_active.set(false);
             }
             state.focused_panel.set(FocusedPanel::RightSidebar);
             // Initialize cursor to first heading if not set
@@ -182,9 +184,10 @@ pub fn dispatch_action(action: &Action, mut state: AppState) {
             }
         }
         Action::FocusQuickAccess => {
-            // Open sidebar if closed (quick access is part of sidebar)
-            if !state.sidebar.read().open {
-                state.toggle_sidebar();
+            // Show overlay if not pinned (quick access is part of sidebar)
+            if !state.sidebar.read().pinned {
+                state.left_hover_active.set(true);
+                state.right_hover_active.set(false);
             }
             state.focused_panel.set(FocusedPanel::QuickAccess);
             // Initialize cursor to first bookmark if not set
@@ -196,6 +199,8 @@ pub fn dispatch_action(action: &Action, mut state: AppState) {
         }
         Action::FocusContent => {
             state.focused_panel.set(FocusedPanel::Content);
+            state.left_hover_active.set(false);
+            state.right_hover_active.set(false);
         }
 
         // --- Cursor ---
@@ -269,15 +274,17 @@ pub fn dispatch_action(action: &Action, mut state: AppState) {
 
         // --- Right sidebar ---
         Action::RightSidebarShowContents => {
-            if !*state.right_sidebar_open.read() {
-                state.toggle_right_sidebar();
+            if !*state.right_sidebar_pinned.read() {
+                state.right_hover_active.set(true);
+                state.left_hover_active.set(false);
             }
             state.set_right_sidebar_tab(RightSidebarTab::Contents);
             state.focused_panel.set(FocusedPanel::RightSidebar);
         }
         Action::RightSidebarShowSearch => {
-            if !*state.right_sidebar_open.read() {
-                state.toggle_right_sidebar();
+            if !*state.right_sidebar_pinned.read() {
+                state.right_hover_active.set(true);
+                state.left_hover_active.set(false);
             }
             state.set_right_sidebar_tab(RightSidebarTab::Search);
             state.focused_panel.set(FocusedPanel::RightSidebar);

@@ -42,6 +42,10 @@
       "action": "window.toggle_sidebar"
     },
     {
+      "key": "Cmd+Shift+b",
+      "action": "window.toggle_right_sidebar"
+    },
+    {
       "key": "Cmd+0",
       "action": "zoom.reset"
     },
@@ -385,11 +389,11 @@
     },
     {
       "key": "Ctrl+w h",
-      "action": "window.toggle_sidebar"
+      "action": "focus.left_sidebar"
     },
     {
       "key": "Ctrl+w Ctrl+h",
-      "action": "window.toggle_sidebar"
+      "action": "focus.left_sidebar"
     },
     {
       "key": "Ctrl+w l",
@@ -447,11 +451,11 @@
     },
     {
       "key": "Ctrl+w l",
-      "action": "window.toggle_right_sidebar"
+      "action": "focus.right_sidebar"
     },
     {
       "key": "Ctrl+w Ctrl+l",
-      "action": "window.toggle_right_sidebar"
+      "action": "focus.right_sidebar"
     }
   ],
   "quickAccess": [
@@ -485,11 +489,11 @@
     },
     {
       "key": "Ctrl+w h",
-      "action": "window.toggle_sidebar"
+      "action": "focus.left_sidebar"
     },
     {
       "key": "Ctrl+w Ctrl+h",
-      "action": "window.toggle_sidebar"
+      "action": "focus.left_sidebar"
     },
     {
       "key": "Ctrl+w l",

@@ -29,7 +29,8 @@ enum MenuId {
     Find,
     FindNext,
     FindPrevious,
-    ToggleSidebar,
+    ToggleLeftSidebar,
+    ToggleRightSidebar,
     ActualSize,
     ZoomIn,
     ZoomOut,
@@ -58,7 +59,8 @@ impl MenuId {
             "edit.find" => Some(Self::Find),
             "edit.find_next" => Some(Self::FindNext),
             "edit.find_previous" => Some(Self::FindPrevious),
-            "view.toggle_sidebar" => Some(Self::ToggleSidebar),
+            "view.toggle_left_sidebar" => Some(Self::ToggleLeftSidebar),
+            "view.toggle_right_sidebar" => Some(Self::ToggleRightSidebar),
             "view.actual_size" => Some(Self::ActualSize),
             "view.zoom_in" => Some(Self::ZoomIn),
             "view.zoom_out" => Some(Self::ZoomOut),
@@ -88,7 +90,8 @@ impl MenuId {
             Self::Find => "edit.find",
             Self::FindNext => "edit.find_next",
             Self::FindPrevious => "edit.find_previous",
-            Self::ToggleSidebar => "view.toggle_sidebar",
+            Self::ToggleLeftSidebar => "view.toggle_left_sidebar",
+            Self::ToggleRightSidebar => "view.toggle_right_sidebar",
             Self::ActualSize => "view.actual_size",
             Self::ZoomIn => "view.zoom_in",
             Self::ZoomOut => "view.zoom_out",
@@ -140,7 +143,8 @@ fn menu_action_for_id(id: MenuId) -> Option<&'static str> {
         MenuId::Find => "search.open",
         MenuId::FindNext => "search.next",
         MenuId::FindPrevious => "search.prev",
-        MenuId::ToggleSidebar => "window.toggle_sidebar",
+        MenuId::ToggleLeftSidebar => "window.toggle_sidebar",
+        MenuId::ToggleRightSidebar => "window.toggle_right_sidebar",
         MenuId::ActualSize => "zoom.reset",
         MenuId::ZoomIn => "zoom.in",
         MenuId::ZoomOut => "zoom.out",
@@ -231,7 +235,8 @@ fn add_view_menu(menu: &Menu) {
 
     view_menu
         .append_items(&[
-            &create_menu_item(MenuId::ToggleSidebar, "Toggle Sidebar"),
+            &create_menu_item(MenuId::ToggleLeftSidebar, "Toggle Left Sidebar"),
+            &create_menu_item(MenuId::ToggleRightSidebar, "Toggle Right Sidebar"),
             &PredefinedMenuItem::separator(),
             &create_menu_item(MenuId::ActualSize, "Actual Size"),
             &create_menu_item(MenuId::ZoomIn, "Zoom In"),
@@ -355,7 +360,8 @@ pub fn handle_menu_event_global(event: &MenuEvent) -> bool {
 /// - `Open`: Opens file picker for markdown files
 /// - `OpenDirectory`: Opens directory picker
 /// - `CloseTab` / `CloseAllTabs` / `CloseWindow`: Tab/window management
-/// - `ToggleSidebar`: Toggles sidebar visibility
+/// - `ToggleLeftSidebar`: Toggles left sidebar pin state
+/// - `ToggleRightSidebar`: Toggles right sidebar pin state
 /// - `ActualSize` / `ZoomIn` / `ZoomOut`: Zoom controls
 /// - `GoBack` / `GoForward`: Navigation history
 /// - `RevealInFinder` / `CopyFilePath`: File operations
@@ -413,8 +419,11 @@ pub fn handle_menu_event_with_state(event: &MenuEvent, state: &mut AppState) -> 
         MenuId::CloseWindow => {
             window().close();
         }
-        MenuId::ToggleSidebar => {
+        MenuId::ToggleLeftSidebar => {
             state.toggle_sidebar();
+        }
+        MenuId::ToggleRightSidebar => {
+            state.toggle_right_sidebar();
         }
         MenuId::ActualSize => {
             state.zoom_level.set(1.0);
@@ -543,7 +552,8 @@ mod tests {
             "edit.find",
             "edit.find_next",
             "edit.find_previous",
-            "view.toggle_sidebar",
+            "view.toggle_left_sidebar",
+            "view.toggle_right_sidebar",
             "view.actual_size",
             "view.zoom_in",
             "view.zoom_out",
