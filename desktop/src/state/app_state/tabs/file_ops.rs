@@ -36,7 +36,14 @@ impl AppState {
     }
 
     /// Open preferences in a tab. Reuses existing preferences tab if found.
+    /// Unpins both sidebars so preferences gets the full window.
     pub fn open_preferences(&mut self) {
+        // Unpin both sidebars and close overlays (preferences is a full-screen settings page)
+        self.sidebar.write().pinned = false;
+        self.right_sidebar_pinned.set(false);
+        self.left_hover_active.set(false);
+        self.right_hover_active.set(false);
+
         // Check if preferences tab already exists
         let tabs = self.tabs.read();
         if let Some(index) = tabs
