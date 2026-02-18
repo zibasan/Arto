@@ -28,8 +28,6 @@ pub fn Header() -> Element {
         .as_ref()
         .is_some_and(|tab| tab.history.can_go_forward());
 
-    let is_sidebar_open = state.sidebar.read().open;
-
     let on_back = move |_| {
         state.save_scroll_and_go_back();
     };
@@ -64,19 +62,6 @@ pub fn Header() -> Element {
             // File name display (left side) with navigation buttons
             div {
                 class: "header-left",
-
-                // Sidebar toggle button
-                button {
-                    class: "left-sidebar-toggle-button",
-                    class: if is_sidebar_open { "active" },
-                    onclick: move |_| {
-                        state.toggle_sidebar();
-                    },
-                    Icon {
-                        name: IconName::Sidebar,
-                        size: 20,
-                    }
-                }
 
                 // Back button
                 button {
@@ -169,20 +154,6 @@ pub fn Header() -> Element {
 
                 // Theme selector
                 ThemeSelector { current_theme: state.current_theme }
-
-                // Right sidebar toggle button
-                button {
-                    class: "right-sidebar-toggle-button",
-                    class: if *state.right_sidebar_open.read() { "active" },
-                    title: "Toggle Right Sidebar",
-                    onclick: move |_| {
-                        state.toggle_right_sidebar();
-                    },
-                    Icon {
-                        name: IconName::List,
-                        size: 18,
-                    }
-                }
             }
         }
     }
