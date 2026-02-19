@@ -1,10 +1,10 @@
 use super::tabs::{
     about_tab::AboutTab, directory_tab::DirectoryTab, general_tab::GeneralTab,
-    right_sidebar_tab::RightSidebarTab, sidebar_tab::SidebarTab, theme_tab::ThemeTab,
-    window_position_tab::WindowPositionTab, window_size_tab::WindowSizeTab,
+    keybindings_tab::KeybindingsTab, right_sidebar_tab::RightSidebarTab, sidebar_tab::SidebarTab,
+    theme_tab::ThemeTab, window_position_tab::WindowPositionTab, window_size_tab::WindowSizeTab,
 };
 use crate::components::icon::{Icon, IconName};
-use crate::config::{Config, CONFIG};
+use crate::config::{Config, CONFIG, CONFIG_CHANGED_BROADCAST};
 use crate::state::AppState;
 use dioxus::prelude::*;
 use parking_lot::RwLock;
@@ -20,6 +20,7 @@ pub enum PreferencesTab {
     WindowPosition,
     Sidebar,
     RightSidebar,
+    Keybindings,
     About,
 }
 
@@ -65,6 +66,7 @@ pub fn PreferencesView() -> Element {
                 save_status.set(SaveStatus::Idle);
             } else {
                 *CONFIG.write() = cfg.clone();
+                CONFIG_CHANGED_BROADCAST.send(()).ok();
                 has_changes.set(false);
                 save_status.set(SaveStatus::Saved);
                 // Reset to idle after showing success
@@ -150,6 +152,15 @@ pub fn PreferencesView() -> Element {
                         },
                         Icon { name: IconName::List, size: 18 }
                         span { "Right Sidebar" }
+                    }
+                    button {
+                        class: if current_tab == PreferencesTab::Keybindings { "nav-tab active" } else { "nav-tab" },
+                        onclick: move |_| {
+                            active_tab.set(PreferencesTab::Keybindings);
+                            *LAST_PREFERENCES_TAB.write() = PreferencesTab::Keybindings;
+                        },
+                        Icon { name: IconName::Command, size: 18 }
+                        span { "Keybindings" }
                     }
 
                     // Spacer to push About to bottom
@@ -239,6 +250,12 @@ pub fn PreferencesView() -> Element {
                                 config,
                                 has_changes,
                                 state,
+                            }
+                        },
+                        PreferencesTab::Keybindings => rsx! {
+                            KeybindingsTab {
+                                config,
+                                has_changes,
                             }
                         },
                         PreferencesTab::About => rsx! {

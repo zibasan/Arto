@@ -514,11 +514,26 @@ function adjustMenuPosition(menu: HTMLElement): void {
 
 // Initialize the position adjuster
 setupMenuPositionAdjuster();
+let clearCursorOnClickInitialized = false;
 
 /**
  * Setup context menu event listener on the markdown viewer
  */
 export function setup(sendToRust: (data: ContextMenuData) => void): void {
+  // Clear keyboard content cursor when user switches back to mouse interaction.
+  if (!clearCursorOnClickInitialized) {
+    document.addEventListener(
+      "click",
+      (event) => {
+        const target = event.target as HTMLElement | null;
+        if (!target?.closest(".markdown-body")) return;
+        window.Arto?.contentCursor?.clearCursor?.();
+      },
+      true,
+    );
+    clearCursorOnClickInitialized = true;
+  }
+
   // Find the markdown body element
   const handler = (event: MouseEvent) => {
     const target = event.target as HTMLElement;
@@ -529,6 +544,10 @@ export function setup(sendToRust: (data: ContextMenuData) => void): void {
 
     // Prevent default browser context menu
     event.preventDefault();
+
+    // Keep content cursor aligned with the context-menu target so that
+    // context-menu actions and keyboard actions operate on the same element.
+    window.Arto?.contentCursor?.setFromContextTarget?.(target);
 
     // Detect context and send to Rust
     // Position adjustment is handled by MutationObserver after menu renders

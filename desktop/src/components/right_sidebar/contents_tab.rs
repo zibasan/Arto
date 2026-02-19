@@ -4,7 +4,7 @@ use dioxus::prelude::*;
 use crate::markdown::HeadingInfo;
 
 #[component]
-pub fn ContentsTab(headings: Vec<HeadingInfo>) -> Element {
+pub fn ContentsTab(headings: Vec<HeadingInfo>, cursor_index: Option<usize>) -> Element {
     rsx! {
         div {
             class: "right-sidebar-contents",
@@ -17,8 +17,11 @@ pub fn ContentsTab(headings: Vec<HeadingInfo>) -> Element {
             } else {
                 ul {
                     class: "right-sidebar-contents-list",
-                    for heading in headings.iter() {
-                        HeadingItem { heading: heading.clone() }
+                    for (index, heading) in headings.iter().enumerate() {
+                        HeadingItem {
+                            heading: heading.clone(),
+                            is_keyboard_focused: cursor_index == Some(index),
+                        }
                     }
                 }
             }
@@ -27,13 +30,14 @@ pub fn ContentsTab(headings: Vec<HeadingInfo>) -> Element {
 }
 
 #[component]
-fn HeadingItem(heading: HeadingInfo) -> Element {
+fn HeadingItem(heading: HeadingInfo, is_keyboard_focused: bool) -> Element {
     let id = heading.id.clone();
     let level = heading.level;
 
     rsx! {
         li {
             class: "right-sidebar-contents-item",
+            class: if is_keyboard_focused { "keyboard-focused" },
             "data-level": "{level}",
 
             button {
@@ -41,16 +45,16 @@ fn HeadingItem(heading: HeadingInfo) -> Element {
                 onclick: move |_| {
                     let id = id.clone();
                     spawn(async move {
+                        let id_json = serde_json::to_string(&id).unwrap_or_else(|_| "null".to_string());
                         let js = format!(
                             r#"
                             (() => {{
-                                const el = document.getElementById('{}');
+                                const el = document.getElementById({id_json});
                                 if (el) {{
                                     el.scrollIntoView({{ behavior: 'smooth', block: 'start' }});
                                 }}
                             }})();
                             "#,
-                            id
                         );
                         let _ = document::eval(&js).await;
                     });

@@ -1,17 +1,17 @@
 use dioxus::prelude::*;
-use std::path::PathBuf;
 
-use super::menu_item::{ContextMenuSubmenu, CopyMenuItem};
+use super::menu_item::{ContextMenuItem, ContextMenuSubmenu};
+use crate::keybindings::dispatcher::dispatch_action;
+use crate::keybindings::Action;
 
 /// "Copy Path As..." submenu: Path / Path with Line / Path with Range
 #[component]
 pub(super) fn CopyPathAsSubmenu(
-    current_file: PathBuf,
     source_line: Option<u32>,
     source_line_end: Option<u32>,
     on_close: EventHandler<()>,
 ) -> Element {
-    let path_str = current_file.display().to_string();
+    let state = use_context::<crate::state::AppState>();
     let has_range =
         source_line.is_some() && source_line_end.is_some() && source_line != source_line_end;
 
@@ -19,22 +19,38 @@ pub(super) fn CopyPathAsSubmenu(
         ContextMenuSubmenu {
             label: "Copy Path As...",
 
-            CopyMenuItem { label: "Path", text: path_str.clone(), on_close }
+            ContextMenuItem {
+                label: "Path",
+                on_click: {
+                    move |_| {
+                        dispatch_action(&Action::CopyFilePath, state);
+                        on_close.call(());
+                    }
+                },
+            }
 
             if let Some(line) = source_line {
-                CopyMenuItem {
+                ContextMenuItem {
                     label: format!("Path with Line ({line})"),
-                    text: format!("{path_str}:{line}"),
-                    on_close,
+                    on_click: {
+                        move |_| {
+                            dispatch_action(&Action::CopyFilePathWithLine, state);
+                            on_close.call(());
+                        }
+                    },
                 }
             }
 
             if has_range {
                 if let (Some(start), Some(end)) = (source_line, source_line_end) {
-                    CopyMenuItem {
+                    ContextMenuItem {
                         label: format!("Path with Range ({start}-{end})"),
-                        text: format!("{path_str}:{start}-{end}"),
-                        on_close,
+                        on_click: {
+                            move |_| {
+                                dispatch_action(&Action::CopyFilePathWithRange, state);
+                                on_close.call(());
+                            }
+                        },
                     }
                 }
             }

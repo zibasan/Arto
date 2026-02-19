@@ -9,9 +9,12 @@ use crate::markdown::HeadingInfo;
 use crate::pinned_search::PinnedSearchId;
 use crate::theme::Theme;
 
+mod focused_panel;
 mod sidebar;
+pub(crate) mod sidebar_cursor;
 mod tabs;
 
+pub use focused_panel::*;
 pub use sidebar::Sidebar;
 pub use tabs::{Tab, TabContent};
 
@@ -87,6 +90,14 @@ pub struct AppState {
     /// from disk without going through the use_memo PartialEq gate in content.rs.
     /// Used by manual reload (header button, tab context menu) and file watcher.
     pub reload_trigger: Signal<usize>,
+    /// Which panel currently has keyboard focus (for context-aware keybindings).
+    pub focused_panel: Signal<FocusedPanel>,
+    /// Keyboard cursor position in the left sidebar file tree.
+    pub sidebar_cursor: Signal<Option<PathBuf>>,
+    /// Keyboard cursor position in the right sidebar TOC (index into headings list).
+    pub toc_cursor: Signal<Option<usize>>,
+    /// Keyboard cursor position in the Quick Access list (index into bookmarks).
+    pub quick_access_cursor: Signal<Option<usize>>,
 }
 
 impl AppState {
@@ -117,6 +128,10 @@ impl AppState {
             pending_scroll_position: Signal::new(None),
             current_scroll_position: Signal::new(0.0),
             reload_trigger: Signal::new(0),
+            focused_panel: Signal::new(FocusedPanel::Content),
+            sidebar_cursor: Signal::new(None),
+            toc_cursor: Signal::new(None),
+            quick_access_cursor: Signal::new(None),
         }
     }
 }

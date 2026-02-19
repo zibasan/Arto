@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 mod behavior;
 mod directory_config;
 mod file_open_behavior;
+mod keybindings_config;
 mod right_sidebar_config;
 mod sidebar_config;
 mod theme_config;
@@ -14,6 +15,7 @@ mod zoom_config;
 pub use behavior::{NewWindowBehavior, StartupBehavior};
 pub use directory_config::DirectoryConfig;
 pub use file_open_behavior::FileOpenBehavior;
+pub use keybindings_config::{BindingSet, KeyAction};
 pub use right_sidebar_config::{RightSidebarConfig, DEFAULT_RIGHT_SIDEBAR_WIDTH};
 pub use sidebar_config::{normalize_zoom_level, SidebarConfig};
 pub use theme_config::ThemeConfig;
@@ -36,6 +38,8 @@ pub struct Config {
     pub window_position: WindowPositionConfig,
     pub window_size: WindowSizeConfig,
     pub zoom: ZoomConfig,
+    #[serde(skip_serializing, skip_deserializing, default)]
+    pub keybindings: BindingSet,
 }
 
 #[cfg(test)]
@@ -44,6 +48,15 @@ mod tests {
     use super::*;
     use crate::theme::Theme;
     use std::path::PathBuf;
+
+    fn assert_keybindings_empty(set: &BindingSet) {
+        assert!(set.global.is_empty());
+        assert!(set.content.is_empty());
+        assert!(set.sidebar.is_empty());
+        assert!(set.quick_access.is_empty());
+        assert!(set.right_sidebar.is_empty());
+        assert!(set.search.is_empty());
+    }
 
     #[test]
     fn test_config_default() {
@@ -96,6 +109,9 @@ mod tests {
         assert_eq!(config.zoom.default_zoom_level, 1.0);
         assert_eq!(config.zoom.on_startup, StartupBehavior::Default);
         assert_eq!(config.zoom.on_new_window, NewWindowBehavior::Default);
+
+        // Keybindings defaults
+        assert_keybindings_empty(&config.keybindings);
 
         // Window position defaults
         assert_eq!(
@@ -186,10 +202,18 @@ mod tests {
                 on_startup: StartupBehavior::LastClosed,
                 on_new_window: NewWindowBehavior::LastFocused,
             },
+            keybindings: BindingSet {
+                global: vec![KeyAction {
+                    key: "Ctrl+k".to_string(),
+                    action: "tab.close".to_string(),
+                }],
+                ..Default::default()
+            },
         };
 
         let json = serde_json::to_string_pretty(&config).unwrap();
         let parsed: Config = serde_json::from_str(&json).unwrap();
+        assert!(!json.contains("\"keybindings\""));
 
         assert_eq!(parsed.theme.default_theme, Theme::Dark);
         assert_eq!(parsed.theme.on_startup, StartupBehavior::LastClosed);
@@ -222,6 +246,7 @@ mod tests {
         assert_eq!(parsed.zoom.default_zoom_level, 1.5);
         assert_eq!(parsed.zoom.on_startup, StartupBehavior::LastClosed);
         assert_eq!(parsed.zoom.on_new_window, NewWindowBehavior::LastFocused);
+        assert_keybindings_empty(&parsed.keybindings);
     }
 
     #[test]

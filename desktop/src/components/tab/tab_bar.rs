@@ -232,14 +232,21 @@ pub fn TabBar() -> Element {
     let mut tab_bar_element: Signal<Option<std::rc::Rc<MountedData>>> = use_signal(|| None);
 
     // Track escape key to cancel drag
+    // stopPropagation prevents the keybinding engine from also processing Escape
     let handle_keydown = move |evt: Event<KeyboardData>| {
         if evt.key() == Key::Escape {
-            // Cancel local pending state
-            if matches!(*local_drag_state.read(), LocalDragState::Pending(_)) {
+            let has_pending = matches!(*local_drag_state.read(), LocalDragState::Pending(_));
+            let has_active = drag::is_active_drag();
+
+            // Only consume the event when there's a drag to cancel
+            if has_pending || has_active {
+                evt.stop_propagation();
+            }
+
+            if has_pending {
                 local_drag_state.set(LocalDragState::Idle);
             }
-            // Cancel global active drag and restore tab
-            if drag::is_active_drag() {
+            if has_active {
                 cancel_active_drag_on_escape(
                     &mut state,
                     current_window_id,

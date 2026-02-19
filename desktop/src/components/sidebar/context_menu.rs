@@ -5,6 +5,7 @@ use dioxus::prelude::*;
 
 use crate::bookmarks::BOOKMARKS;
 use crate::components::icon::{Icon, IconName};
+use crate::keybindings::{shortcut_hint_for_context_action, KeyContext};
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum SidebarItemKind {
@@ -28,6 +29,7 @@ pub fn SidebarContextMenu(
     other_windows: Vec<(WindowId, String)>,
 ) -> Element {
     let mut show_submenu = use_signal(|| false);
+    let shortcut = |action| shortcut_hint_for_context_action(KeyContext::Sidebar, action);
 
     let is_file = kind == SidebarItemKind::File;
     let is_bookmarked = BOOKMARKS.read().contains(&path);
@@ -131,12 +133,14 @@ pub fn SidebarContextMenu(
 
             ContextMenuItem {
                 label: copy_path_label,
+                shortcut: shortcut("clipboard.copy_file_path"),
                 icon: Some(IconName::Copy),
                 on_click: move |_| on_copy_path.call(()),
             }
 
             ContextMenuItem {
                 label: "Reveal in Finder",
+                shortcut: shortcut("file.reveal_in_finder"),
                 icon: Some(IconName::Folder),
                 on_click: move |_| on_reveal_in_finder.call(()),
             }
@@ -146,6 +150,7 @@ pub fn SidebarContextMenu(
 
             ContextMenuItem {
                 label: "Reload",
+                shortcut: shortcut("window.reload"),
                 icon: Some(IconName::Refresh),
                 on_click: move |_| on_reload.call(()),
             }
@@ -160,6 +165,8 @@ pub fn SidebarContextMenu(
 #[derive(Props, Clone, PartialEq)]
 struct ContextMenuItemProps {
     label: &'static str,
+    #[props(default)]
+    shortcut: Option<String>,
     #[props(default)]
     icon: Option<IconName>,
     #[props(default = false)]
@@ -187,6 +194,10 @@ fn ContextMenuItem(props: ContextMenuItemProps) -> Element {
             }
 
             span { class: "context-menu-label", "{props.label}" }
+
+            if let Some(shortcut) = props.shortcut {
+                span { class: "context-menu-shortcut", "{shortcut}" }
+            }
         }
     }
 }

@@ -3,12 +3,13 @@ use dioxus::prelude::*;
 use std::cmp::Ordering;
 use std::fs;
 use std::path::PathBuf;
+use tokio::sync::oneshot;
 
 use super::context_menu::{SidebarContextMenu, SidebarItemKind};
 use super::quick_access::QuickAccess;
 use crate::components::bookmark_button::BookmarkButton;
 use crate::components::icon::{Icon, IconName};
-use crate::state::AppState;
+use crate::state::{AppState, FocusedPanel};
 use crate::utils::{file::is_markdown_file, file_operations};
 use crate::watcher::FILE_WATCHER;
 
@@ -360,6 +361,9 @@ fn DirectoryTree(path: PathBuf, refresh_counter: Signal<u32>) -> Element {
 /// - `refresh_counter` increments (file watcher detects filesystem changes)
 #[component]
 fn DirectoryChildren(path: PathBuf, depth: usize, refresh_counter: Signal<u32>) -> Element {
+    // Watch expanded directories only (non-recursive) to avoid broad permission access.
+    use_directory_watcher(Some(path.clone()), refresh_counter);
+
     // Subscribe to the signal so Dioxus re-runs this component when the
     // counter increments (file watcher detected filesystem changes).
     let _ = refresh_counter.read();
@@ -400,6 +404,13 @@ fn FileTreeNode(
     let is_active = current_tab
         .and_then(|tab| tab.file().map(|f| f == path))
         .unwrap_or(false);
+
+    let is_keyboard_focused = *state.focused_panel.read() == FocusedPanel::LeftSidebar
+        && state
+            .sidebar_cursor
+            .read()
+            .as_ref()
+            .is_some_and(|p| p == &path);
 
     let indent_style = format!("padding-left: {}px", depth * 20);
 
@@ -540,6 +551,7 @@ fn FileTreeNode(
         div {
             class: "left-sidebar-tree-node",
             class: if is_active { "active" },
+            class: if is_keyboard_focused { "keyboard-focused" },
 
             // Full-row clickable design:
             // - Parent row (this div): Fallback handler for empty space clicks
@@ -684,28 +696,56 @@ fn FileTreeNode(
 
 /// Hook to watch a directory for file system changes and trigger refresh
 fn use_directory_watcher(directory: Option<PathBuf>, mut refresh_counter: Signal<u32>) {
+    // Cancellation signal for the currently active watcher task.
+    let mut stop_tx = use_signal(|| None::<oneshot::Sender<()>>);
+
     use_effect(use_reactive!(|directory| {
+        // Cancel previous watcher when target directory changes.
+        if let Some(tx) = stop_tx.write().take() {
+            let _ = tx.send(());
+        }
+
         spawn(async move {
             let Some(dir) = directory else {
                 return;
             };
 
-            // Start watching the directory
-            let Ok(mut watcher) = FILE_WATCHER.watch_directory(dir.clone()).await else {
+            let (tx, mut stop_rx) = oneshot::channel();
+            stop_tx.set(Some(tx));
+
+            // Start watching the directory (direct children only)
+            let Ok(mut watcher) = FILE_WATCHER
+                .watch_directory_non_recursive(dir.clone())
+                .await
+            else {
                 tracing::error!("Failed to start directory watcher for {:?}", dir);
                 return;
             };
 
-            tracing::debug!("Directory watcher started for {:?}", dir);
+            tracing::debug!("Directory watcher started (non-recursive) for {:?}", dir);
 
             // Listen for changes and trigger refresh
-            while watcher.recv().await.is_some() {
-                tracing::trace!(?dir, "Directory changed, triggering refresh");
-                refresh_counter.set(refresh_counter() + 1);
+            loop {
+                tokio::select! {
+                    _ = &mut stop_rx => break,
+                    changed = watcher.recv() => {
+                        if changed.is_none() {
+                            break;
+                        }
+                        tracing::trace!(?dir, "Directory changed, triggering refresh");
+                        refresh_counter.set(refresh_counter() + 1);
+                    }
+                }
             }
 
-            // Cleanup when effect is re-run or component unmounts
-            let _ = FILE_WATCHER.unwatch_directory(dir).await;
+            let _ = FILE_WATCHER.unwatch_directory_non_recursive(dir).await;
         });
     }));
+
+    // Ensure watcher task gets cancelled when component unmounts.
+    use_drop(move || {
+        if let Some(tx) = stop_tx.write().take() {
+            let _ = tx.send(());
+        }
+    });
 }

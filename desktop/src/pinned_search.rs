@@ -9,7 +9,6 @@
 use chrono::{DateTime, Utc};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::LazyLock;
@@ -77,6 +76,17 @@ impl HighlightColor {
         HighlightColor::Orange,
         HighlightColor::Purple,
     ];
+
+    /// Return the next color in the fixed rotation order.
+    pub fn next(self) -> HighlightColor {
+        match self {
+            HighlightColor::Green => HighlightColor::Blue,
+            HighlightColor::Blue => HighlightColor::Pink,
+            HighlightColor::Pink => HighlightColor::Orange,
+            HighlightColor::Orange => HighlightColor::Purple,
+            HighlightColor::Purple => HighlightColor::Green,
+        }
+    }
 
     /// Get CSS class name for this color.
     pub fn css_class(&self) -> &'static str {
@@ -269,17 +279,14 @@ impl PinnedSearches {
         self.pinned_searches.iter().any(|p| p.pattern == pattern)
     }
 
-    /// Get the next color to use (least used color).
+    /// Get the next color to use.
+    ///
+    /// New pins follow a fixed color rotation based on the latest pinned color.
+    /// This keeps color assignment predictable even immediately after app startup.
     fn next_color(&self) -> HighlightColor {
-        let mut usage: HashMap<HighlightColor, usize> = HashMap::new();
-        for pinned in &self.pinned_searches {
-            *usage.entry(pinned.color).or_insert(0) += 1;
-        }
-
-        // Find least used color
-        HighlightColor::ALL
-            .into_iter()
-            .min_by_key(|c| usage.get(c).unwrap_or(&0))
+        self.pinned_searches
+            .last()
+            .map(|p| p.color.next())
             .unwrap_or_default()
     }
 }
@@ -382,6 +389,15 @@ mod tests {
     }
 
     #[test]
+    fn test_highlight_color_next_rotation() {
+        assert_eq!(HighlightColor::Green.next(), HighlightColor::Blue);
+        assert_eq!(HighlightColor::Blue.next(), HighlightColor::Pink);
+        assert_eq!(HighlightColor::Pink.next(), HighlightColor::Orange);
+        assert_eq!(HighlightColor::Orange.next(), HighlightColor::Purple);
+        assert_eq!(HighlightColor::Purple.next(), HighlightColor::Green);
+    }
+
+    #[test]
     fn test_pinned_search_creation() {
         let pinned = PinnedSearch::new("TODO", HighlightColor::Orange);
         assert_eq!(pinned.pattern, "TODO");
@@ -421,6 +437,17 @@ mod tests {
         assert!(colors.contains(&HighlightColor::Pink));
         assert!(colors.contains(&HighlightColor::Orange));
         assert!(colors.contains(&HighlightColor::Purple));
+    }
+
+    #[test]
+    fn test_pinned_searches_next_color_uses_existing_last_color() {
+        let mut searches = PinnedSearches::default();
+        searches
+            .pinned_searches
+            .push(PinnedSearch::new("Existing", HighlightColor::Blue));
+
+        let new_pin = searches.add("New");
+        assert_eq!(new_pin.color, HighlightColor::Pink);
     }
 
     #[test]

@@ -23,3 +23,22 @@ pub fn reveal_in_finder(path: impl AsRef<Path>) {
         }
     }
 }
+
+/// Open a directory in Finder (macOS) or file explorer.
+pub fn open_directory_in_finder(path: impl AsRef<Path>) {
+    let path = path.as_ref();
+
+    #[cfg(target_os = "macos")]
+    {
+        if let Err(e) = Command::new("open").arg(path).spawn() {
+            tracing::error!(%e, ?path, "Failed to open directory in Finder");
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        if let Err(e) = open::that(path) {
+            tracing::error!(%e, ?path, "Failed to open directory");
+        }
+    }
+}

@@ -1,11 +1,12 @@
 use dioxus::document;
 use dioxus::prelude::{spawn, ReadableExt, WritableExt};
-use dioxus_desktop::muda::accelerator::{Accelerator, Code, Modifiers};
+use dioxus_desktop::muda::accelerator::Accelerator;
 use dioxus_desktop::muda::{Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
 use dioxus_desktop::window;
 use std::path::PathBuf;
 
 use crate::components::content::set_preferences_tab_to_about;
+use crate::keybindings::shortcut_hint_for_global_action;
 use crate::state::AppState;
 use crate::window::{self, settings::normalize_zoom_level, CreateMainWindowConfigParams};
 
@@ -98,15 +99,55 @@ impl MenuId {
     }
 }
 
-/// Helper to create a menu item with optional keyboard shortcut
-fn create_menu_item(
-    id: MenuId,
-    label: &str,
-    code: Option<Code>,
-    additional_modifiers: Option<Modifiers>,
-) -> MenuItem {
-    let accelerator = code.map(|c| get_cmd_or_ctrl(c, additional_modifiers));
-    MenuItem::with_id(id.as_str(), label, true, accelerator)
+/// Helper to create a menu item without an accelerator.
+///
+/// All keyboard shortcuts are handled by the keybinding engine, not muda.
+fn create_menu_item(id: MenuId, label: &str) -> MenuItem {
+    let display_label = menu_label_with_shortcut(id, label);
+    MenuItem::with_id(id.as_str(), &display_label, true, None::<Accelerator>)
+}
+
+/// Build a menu label with a right-aligned shortcut hint (without muda Accelerator).
+///
+/// We intentionally avoid `with_accelerator()` because keyboard handling is owned by
+/// the keybinding engine. This only mirrors the hint in the menu UI.
+fn menu_label_with_shortcut(id: MenuId, base_label: &str) -> String {
+    let Some(action) = menu_action_for_id(id) else {
+        return base_label.to_string();
+    };
+    let Some(shortcut) = shortcut_hint_for_global_action(action) else {
+        return base_label.to_string();
+    };
+    format!("{base_label}\t{shortcut}")
+}
+
+/// Map menu items to keybinding actions for hint display.
+fn menu_action_for_id(id: MenuId) -> Option<&'static str> {
+    Some(match id {
+        MenuId::About => "app.about",
+        MenuId::NewWindow => "window.new",
+        MenuId::NewTab => "tab.new",
+        MenuId::Open => "file.open",
+        MenuId::OpenDirectory => "file.open_directory",
+        MenuId::RevealInFinder => "file.reveal_in_finder",
+        MenuId::CopyFilePath => "clipboard.copy_file_path",
+        MenuId::CloseTab => "tab.close",
+        MenuId::CloseAllTabs => "tab.close_all",
+        MenuId::CloseWindow => "window.close",
+        MenuId::CloseAllChildWindows => "window.close_all_child_windows",
+        MenuId::CloseAllWindows => "window.close_all_windows",
+        MenuId::Preferences => "file.preferences",
+        MenuId::Find => "search.open",
+        MenuId::FindNext => "search.next",
+        MenuId::FindPrevious => "search.prev",
+        MenuId::ToggleSidebar => "window.toggle_sidebar",
+        MenuId::ActualSize => "zoom.reset",
+        MenuId::ZoomIn => "zoom.in",
+        MenuId::ZoomOut => "zoom.out",
+        MenuId::GoBack => "history.back",
+        MenuId::GoForward => "history.forward",
+        MenuId::GoToHomepage => "app.go_to_homepage",
+    })
 }
 
 /// Build the application menu bar
@@ -131,14 +172,9 @@ fn add_app_menu(menu: &Menu) {
 
     arto_menu
         .append_items(&[
-            &create_menu_item(MenuId::About, "About Arto", None, None),
+            &create_menu_item(MenuId::About, "About Arto"),
             &PredefinedMenuItem::separator(),
-            &create_menu_item(
-                MenuId::Preferences,
-                "Preferences...",
-                Some(Code::Comma),
-                None,
-            ),
+            &create_menu_item(MenuId::Preferences, "Preferences..."),
             &PredefinedMenuItem::separator(),
             &PredefinedMenuItem::quit(Some("Quit")),
         ])
@@ -152,33 +188,18 @@ fn add_file_menu(menu: &Menu) {
 
     file_menu
         .append_items(&[
-            &create_menu_item(MenuId::NewWindow, "New Window", Some(Code::KeyN), None),
-            &create_menu_item(MenuId::NewTab, "New Tab", Some(Code::KeyT), None),
+            &create_menu_item(MenuId::NewWindow, "New Window"),
+            &create_menu_item(MenuId::NewTab, "New Tab"),
             &PredefinedMenuItem::separator(),
-            &create_menu_item(MenuId::Open, "Open File...", Some(Code::KeyO), None),
-            &create_menu_item(
-                MenuId::OpenDirectory,
-                "Open Directory...",
-                Some(Code::KeyO),
-                Some(Modifiers::SHIFT),
-            ),
+            &create_menu_item(MenuId::Open, "Open File..."),
+            &create_menu_item(MenuId::OpenDirectory, "Open Directory..."),
             &PredefinedMenuItem::separator(),
-            &create_menu_item(MenuId::CopyFilePath, "Copy File Path", None, None),
-            &create_menu_item(
-                MenuId::RevealInFinder,
-                "Reveal in Finder",
-                Some(Code::KeyR),
-                Some(Modifiers::SHIFT),
-            ),
+            &create_menu_item(MenuId::CopyFilePath, "Copy File Path"),
+            &create_menu_item(MenuId::RevealInFinder, "Reveal in Finder"),
             &PredefinedMenuItem::separator(),
-            &create_menu_item(MenuId::CloseTab, "Close Tab", Some(Code::KeyW), None),
-            &create_menu_item(MenuId::CloseAllTabs, "Close All Tabs", None, None),
-            &create_menu_item(
-                MenuId::CloseWindow,
-                "Close Window",
-                Some(Code::KeyW),
-                Some(Modifiers::SHIFT),
-            ),
+            &create_menu_item(MenuId::CloseTab, "Close Tab"),
+            &create_menu_item(MenuId::CloseAllTabs, "Close All Tabs"),
+            &create_menu_item(MenuId::CloseWindow, "Close Window"),
         ])
         .unwrap();
 
@@ -196,14 +217,9 @@ fn add_edit_menu(menu: &Menu) {
             &PredefinedMenuItem::separator(),
             &PredefinedMenuItem::select_all(Some("Select All")),
             &PredefinedMenuItem::separator(),
-            &create_menu_item(MenuId::Find, "Find...", Some(Code::KeyF), None),
-            &create_menu_item(MenuId::FindNext, "Find Next", Some(Code::KeyG), None),
-            &create_menu_item(
-                MenuId::FindPrevious,
-                "Find Previous",
-                Some(Code::KeyG),
-                Some(Modifiers::SHIFT),
-            ),
+            &create_menu_item(MenuId::Find, "Find..."),
+            &create_menu_item(MenuId::FindNext, "Find Next"),
+            &create_menu_item(MenuId::FindPrevious, "Find Previous"),
         ])
         .unwrap();
 
@@ -215,16 +231,11 @@ fn add_view_menu(menu: &Menu) {
 
     view_menu
         .append_items(&[
-            &create_menu_item(
-                MenuId::ToggleSidebar,
-                "Toggle Sidebar",
-                Some(Code::KeyB),
-                None,
-            ),
+            &create_menu_item(MenuId::ToggleSidebar, "Toggle Sidebar"),
             &PredefinedMenuItem::separator(),
-            &create_menu_item(MenuId::ActualSize, "Actual Size", Some(Code::Digit0), None),
-            &create_menu_item(MenuId::ZoomIn, "Zoom In", Some(Code::Equal), None),
-            &create_menu_item(MenuId::ZoomOut, "Zoom Out", Some(Code::Minus), None),
+            &create_menu_item(MenuId::ActualSize, "Actual Size"),
+            &create_menu_item(MenuId::ZoomIn, "Zoom In"),
+            &create_menu_item(MenuId::ZoomOut, "Zoom Out"),
         ])
         .unwrap();
 
@@ -236,13 +247,8 @@ fn add_history_menu(menu: &Menu) {
 
     history_menu
         .append_items(&[
-            &create_menu_item(MenuId::GoBack, "Go Back", Some(Code::BracketLeft), None),
-            &create_menu_item(
-                MenuId::GoForward,
-                "Go Forward",
-                Some(Code::BracketRight),
-                None,
-            ),
+            &create_menu_item(MenuId::GoBack, "Go Back"),
+            &create_menu_item(MenuId::GoForward, "Go Forward"),
         ])
         .unwrap();
 
@@ -254,13 +260,8 @@ fn add_window_menu(menu: &Menu) {
 
     window_menu
         .append_items(&[
-            &create_menu_item(
-                MenuId::CloseAllChildWindows,
-                "Close All Child Windows",
-                None,
-                None,
-            ),
-            &create_menu_item(MenuId::CloseAllWindows, "Close All Windows", None, None),
+            &create_menu_item(MenuId::CloseAllChildWindows, "Close All Child Windows"),
+            &create_menu_item(MenuId::CloseAllWindows, "Close All Windows"),
         ])
         .unwrap();
 
@@ -271,28 +272,10 @@ fn add_help_menu(menu: &Menu) {
     let help_menu = Submenu::new("Help", true);
 
     help_menu
-        .append(&create_menu_item(
-            MenuId::GoToHomepage,
-            "Go to Homepage",
-            None,
-            None,
-        ))
+        .append(&create_menu_item(MenuId::GoToHomepage, "Go to Homepage"))
         .unwrap();
 
     menu.append(&help_menu).unwrap();
-}
-
-/// Get Cmd modifier with optional additional modifiers
-fn get_cmd_or_ctrl(code: Code, additional: Option<Modifiers>) -> Accelerator {
-    let base_modifier = Modifiers::SUPER;
-
-    let modifiers = if let Some(additional_mods) = additional {
-        base_modifier | additional_mods
-    } else {
-        base_modifier
-    };
-
-    Accelerator::new(Some(modifiers), code)
 }
 
 /// Check if a menu event is a close action (Close Tab or Close Window)

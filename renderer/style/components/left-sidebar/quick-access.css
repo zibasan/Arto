@@ -85,6 +85,12 @@
   opacity: 0.4;
 }
 
+/* Keyboard cursor highlight */
+.left-sidebar-quick-access-item.keyboard-focused {
+  background-color: color-mix(in srgb, var(--accent-bg) 12%, transparent);
+  opacity: 1;
+}
+
 /* Dragging state */
 .left-sidebar-quick-access-item.dragging {
   opacity: 0.4;

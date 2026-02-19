@@ -1,4 +1,6 @@
 use crate::components::icon::{Icon, IconName};
+use crate::config::Config;
+use crate::utils::file_operations;
 use dioxus::prelude::*;
 
 const ARTO_ICON: Asset = asset!("/assets/arto-app.png");
@@ -6,6 +8,11 @@ const ARTO_ICON: Asset = asset!("/assets/arto-app.png");
 #[component]
 pub fn AboutTab() -> Element {
     let version_text = format!("Version {}", env!("ARTO_BUILD_VERSION"));
+    let config_dir_path = Config::path()
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+    let config_dir_text = config_dir_path.display().to_string();
 
     rsx! {
         div {
@@ -35,6 +42,32 @@ pub fn AboutTab() -> Element {
                 // Description
                 p { class: "about-description",
                     "A local app that faithfully recreates GitHub-style Markdown rendering for a beautiful reading experience."
+                }
+
+                // Configuration directory
+                div {
+                    class: "about-config-dir",
+                    p { class: "about-config-dir-label", "Configuration Directory" }
+                    div {
+                        class: "about-config-dir-row",
+                        input {
+                            class: "about-config-dir-input",
+                            r#type: "text",
+                            value: "{config_dir_text}",
+                            readonly: true,
+                        }
+                        button {
+                            class: "about-config-dir-button",
+                            onclick: {
+                                let config_dir_path = config_dir_path.clone();
+                                move |_| {
+                                    file_operations::open_directory_in_finder(&config_dir_path);
+                                }
+                            },
+                            span { class: "about-link-icon", Icon { name: IconName::FolderOpen, size: 18 } }
+                            span { class: "about-link-text", "Open in Finder" }
+                        }
+                    }
                 }
 
                 // Links (card style like no-file-hints)

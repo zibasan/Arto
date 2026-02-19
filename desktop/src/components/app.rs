@@ -1,6 +1,9 @@
+mod drag_drop_overlay;
 mod drag_handlers;
 mod drop_handlers;
+mod keybinding_engine;
 mod listeners;
+mod shortcut_overlay;
 
 use dioxus::desktop::tao::dpi::{LogicalPosition, LogicalSize};
 use dioxus::desktop::tao::event::{DeviceEvent, ElementState, Event as TaoEvent, WindowEvent};
@@ -14,7 +17,6 @@ use super::content::{
     close_context_menu, use_search_handler, Content, ContentContextMenu, CONTENT_CONTEXT_MENU,
 };
 use super::header::Header;
-use super::icon::{Icon, IconName};
 use super::right_sidebar::RightSidebar;
 use super::right_sidebar::RightSidebarTab;
 use super::search_bar::SearchBar;
@@ -27,9 +29,15 @@ use crate::menu;
 use crate::state::{AppState, PersistedState, Tab};
 use crate::theme::Theme;
 
+use drag_drop_overlay::DragDropOverlay;
 use drag_handlers::{handle_drag_mouse_motion, handle_drag_mouse_release};
 use drop_handlers::handle_dropped_files;
+use keybinding_engine::setup_keybinding_engine;
 use listeners::setup_cross_window_open_listeners;
+use shortcut_overlay::{
+    build_shortcut_help_items, close_shortcut_overlay, split_shortcut_help_columns,
+    ShortcutHelpOverlay, ShortcutOverlayVisibility,
+};
 
 /// Left mouse button ID for DeviceEvent::Button (platform-dependent raw value)
 const MOUSE_BUTTON_LEFT: u32 = 0;
@@ -120,6 +128,12 @@ pub fn App(
 
     // Setup search handlers at App level (window-wide feature)
     use_search_handler(state);
+
+    // Toggle for keyboard shortcut help overlay (which-key style)
+    let shortcut_overlay_visibility = use_signal(|| ShortcutOverlayVisibility::Hidden);
+
+    // Set up keybinding engine (keyboard shortcut processing)
+    setup_keybinding_engine(state, shortcut_overlay_visibility);
 
     // Handle menu events (only state-dependent events, not global ones)
     use_muda_event_handler(move |event| {
@@ -284,6 +298,20 @@ pub fn App(
         crate::window::close_child_windows_for_parent(window_id);
     });
 
+    let focused_panel = *state.focused_panel.read();
+    let focused_context = focused_panel.key_context();
+    let shortcut_help_columns = if !matches!(
+        *shortcut_overlay_visibility.read(),
+        ShortcutOverlayVisibility::Hidden
+    ) {
+        split_shortcut_help_columns(
+            build_shortcut_help_items(focused_context),
+            state.size.read().width,
+        )
+    } else {
+        Vec::new()
+    };
+
     rsx! {
         div {
             class: "app-container",
@@ -322,6 +350,20 @@ pub fn App(
                 DragDropOverlay {}
             }
 
+            if !matches!(
+                *shortcut_overlay_visibility.read(),
+                ShortcutOverlayVisibility::Hidden
+            ) {
+                ShortcutHelpOverlay {
+                    columns: shortcut_help_columns,
+                    is_closing: matches!(
+                        *shortcut_overlay_visibility.read(),
+                        ShortcutOverlayVisibility::Closing
+                    ),
+                    on_close: move |_| close_shortcut_overlay(shortcut_overlay_visibility),
+                }
+            }
+
             // Content context menu (rendered at App level to prevent FileViewer re-renders)
             if let Some(menu_state) = CONTENT_CONTEXT_MENU.read().as_ref() {
                 ContentContextMenu {
@@ -337,7 +379,10 @@ pub fn App(
                     table_tsv: menu_state.data.table_tsv.clone(),
                     table_source_line: menu_state.data.table_source_line,
                     table_source_line_end: menu_state.data.table_source_line_end,
-                    on_close: move |_| close_context_menu(),
+                    on_close: move |_| {
+                        close_context_menu();
+                        crate::keybindings::dispatcher::content_cursor_eval("clearCursorDeferred");
+                    },
                 }
             }
         }
@@ -354,25 +399,5 @@ fn sync_window_metrics(
     }
     if let Some(size) = size {
         *state.size.write() = size;
-    }
-}
-
-#[component]
-fn DragDropOverlay() -> Element {
-    rsx! {
-        div {
-            class: "drag-drop-overlay",
-            div {
-                class: "drag-drop-content",
-                div {
-                    class: "drag-drop-icon",
-                    Icon { name: IconName::FileUpload, size: 64 }
-                }
-                div {
-                    class: "drag-drop-text",
-                    "Drop Markdown file or directory to open"
-                }
-            }
-        }
     }
 }

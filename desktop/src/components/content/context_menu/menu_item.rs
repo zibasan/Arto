@@ -7,7 +7,7 @@ pub(super) struct ContextMenuItemProps {
     #[props(into)]
     label: String,
     #[props(default)]
-    shortcut: Option<&'static str>,
+    shortcut: Option<String>,
     #[props(default)]
     icon: Option<IconName>,
     #[props(default = false)]
@@ -47,25 +47,6 @@ pub(super) fn ContextMenuItem(props: ContextMenuItemProps) -> Element {
 pub(super) fn ContextMenuSeparator() -> Element {
     rsx! {
         div { class: "context-menu-separator" }
-    }
-}
-
-/// A menu item that copies text to clipboard and closes the menu.
-/// Reduces boilerplate for the common "copy + close" pattern.
-#[component]
-pub(super) fn CopyMenuItem(
-    #[props(into)] label: String,
-    #[props(into)] text: String,
-    on_close: EventHandler<()>,
-) -> Element {
-    rsx! {
-        ContextMenuItem {
-            label,
-            on_click: move |_| {
-                crate::utils::clipboard::copy_text(&text);
-                on_close.call(());
-            },
-        }
     }
 }
 

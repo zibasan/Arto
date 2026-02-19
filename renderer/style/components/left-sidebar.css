@@ -21,6 +21,11 @@
   transition: none; /* Disable transition during resize */
 }
 
+/* Panel focus indicator — only visible during keyboard navigation */
+.keyboard-navigating .left-sidebar.panel-focused {
+  box-shadow: inset 0 0 0 2px var(--bg-secondary), inset 0 0 0 3px var(--accent-bg);
+}
+
 /* Inner wrapper with zoom applied */
 .left-sidebar-inner {
   display: flex;
@@ -409,6 +414,15 @@
 .left-sidebar-tree-copy-button.copied {
   opacity: 1 !important;
   color: var(--copy-button-success-fg);
+}
+
+/* ========================================
+   Left Sidebar Keyboard Cursor Highlight
+   ======================================== */
+
+.left-sidebar-tree-node.keyboard-focused > .left-sidebar-tree-node-content {
+  background-color: color-mix(in srgb, var(--accent-bg) 12%, transparent);
+  opacity: 1;
 }
 
 /* ========================================

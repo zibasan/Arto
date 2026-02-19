@@ -14,6 +14,10 @@ import {
 } from "./context-menu-handler";
 import { rasterizeMathBlock, rasterizeMermaidBlock } from "./special-block-rasterizer";
 import * as findInPage from "./find-in-page";
+import * as keyboardInterceptor from "./keyboard-interceptor";
+import * as scrollController from "./scroll-controller";
+import * as contentCursor from "./content-cursor";
+import * as actionFeedback from "./action-feedback";
 
 // Declare global Arto namespace
 declare global {
@@ -40,6 +44,10 @@ declare global {
         mathBlock: (opaque: boolean) => Promise<string | null>;
         /** Rasterize a Mermaid SVG to PNG data URL. */
         mermaidBlock: (opaque: boolean) => Promise<string | null>;
+        /** Rasterize a specific Math block element to PNG data URL. */
+        mathElement: (element: HTMLElement, opaque: boolean) => Promise<string | null>;
+        /** Rasterize a specific Mermaid block element to PNG data URL. */
+        mermaidElement: (element: HTMLElement, opaque: boolean) => Promise<string | null>;
       };
       search: {
         setup: typeof findInPage.setup;
@@ -50,6 +58,45 @@ declare global {
         reapply: typeof findInPage.reapply;
         setPinned: typeof findInPage.setPinned;
         scrollToPinnedMatch: typeof findInPage.scrollToPinnedMatch;
+      };
+      keyboard: {
+        onKeydown: typeof keyboardInterceptor.onKeydown;
+        pause: typeof keyboardInterceptor.pause;
+        resume: typeof keyboardInterceptor.resume;
+      };
+      scroll: {
+        scrollDown: typeof scrollController.scrollDown;
+        scrollUp: typeof scrollController.scrollUp;
+        scrollPageDown: typeof scrollController.scrollPageDown;
+        scrollPageUp: typeof scrollController.scrollPageUp;
+        scrollHalfPageDown: typeof scrollController.scrollHalfPageDown;
+        scrollHalfPageUp: typeof scrollController.scrollHalfPageUp;
+        scrollToTop: typeof scrollController.scrollToTop;
+        scrollToBottom: typeof scrollController.scrollToBottom;
+      };
+      contentCursor: {
+        next: typeof contentCursor.next;
+        prev: typeof contentCursor.prev;
+        nextHeading: typeof contentCursor.nextHeading;
+        prevHeading: typeof contentCursor.prevHeading;
+        setFromContextTarget: typeof contentCursor.setFromContextTarget;
+        show: typeof contentCursor.show;
+        clearCursor: typeof contentCursor.clearCursor;
+        clearCursorDeferred: typeof contentCursor.clearCursorDeferred;
+        syncToViewport: typeof contentCursor.syncToViewport;
+        getCodeText: typeof contentCursor.getCodeText;
+        getCodeAsMarkdown: typeof contentCursor.getCodeAsMarkdown;
+        getTableAsTsv: typeof contentCursor.getTableAsTsv;
+        getTableAsCsv: typeof contentCursor.getTableAsCsv;
+        getTableAsMarkdown: typeof contentCursor.getTableAsMarkdown;
+        getImageSrc: typeof contentCursor.getImageSrc;
+        getImageAsMarkdown: typeof contentCursor.getImageAsMarkdown;
+        getLinkHref: typeof contentCursor.getLinkHref;
+        getSourceLineRange: typeof contentCursor.getSourceLineRange;
+        getCurrentElement: typeof contentCursor.getCurrentElement;
+      };
+      feedback: {
+        show: typeof actionFeedback.show;
       };
     };
     /** Called from JavaScript when Math block click is detected */
@@ -166,6 +213,12 @@ export function init(): void {
         }
         return rasterizeMermaidBlock(element, opaque);
       },
+      mathElement: async (element: HTMLElement, opaque: boolean): Promise<string | null> => {
+        return rasterizeMathBlock(element, opaque);
+      },
+      mermaidElement: async (element: HTMLElement, opaque: boolean): Promise<string | null> => {
+        return rasterizeMermaidBlock(element, opaque);
+      },
     },
     search: {
       setup: findInPage.setup,
@@ -177,7 +230,49 @@ export function init(): void {
       setPinned: findInPage.setPinned,
       scrollToPinnedMatch: findInPage.scrollToPinnedMatch,
     },
+    keyboard: {
+      onKeydown: keyboardInterceptor.onKeydown,
+      pause: keyboardInterceptor.pause,
+      resume: keyboardInterceptor.resume,
+    },
+    scroll: {
+      scrollDown: scrollController.scrollDown,
+      scrollUp: scrollController.scrollUp,
+      scrollPageDown: scrollController.scrollPageDown,
+      scrollPageUp: scrollController.scrollPageUp,
+      scrollHalfPageDown: scrollController.scrollHalfPageDown,
+      scrollHalfPageUp: scrollController.scrollHalfPageUp,
+      scrollToTop: scrollController.scrollToTop,
+      scrollToBottom: scrollController.scrollToBottom,
+    },
+    contentCursor: {
+      next: contentCursor.next,
+      prev: contentCursor.prev,
+      nextHeading: contentCursor.nextHeading,
+      prevHeading: contentCursor.prevHeading,
+      setFromContextTarget: contentCursor.setFromContextTarget,
+      show: contentCursor.show,
+      clearCursor: contentCursor.clearCursor,
+      clearCursorDeferred: contentCursor.clearCursorDeferred,
+      syncToViewport: contentCursor.syncToViewport,
+      getCodeText: contentCursor.getCodeText,
+      getCodeAsMarkdown: contentCursor.getCodeAsMarkdown,
+      getTableAsTsv: contentCursor.getTableAsTsv,
+      getTableAsCsv: contentCursor.getTableAsCsv,
+      getTableAsMarkdown: contentCursor.getTableAsMarkdown,
+      getImageSrc: contentCursor.getImageSrc,
+      getImageAsMarkdown: contentCursor.getImageAsMarkdown,
+      getLinkHref: contentCursor.getLinkHref,
+      getSourceLineRange: contentCursor.getSourceLineRange,
+      getCurrentElement: contentCursor.getCurrentElement,
+    },
+    feedback: {
+      show: actionFeedback.show,
+    },
   };
+
+  // Set up keyboard interceptor event listeners
+  keyboardInterceptor.setup();
 
   // Listen for theme changes from Rust
   document.addEventListener("arto:theme-changed", ((event: CustomEvent) => {

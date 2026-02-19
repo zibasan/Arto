@@ -132,3 +132,8 @@ pre.preprocessed-mermaid:hover {
   outline-offset: -2px;
   opacity: 0.9;
 }
+
+/* Disable hover/click during keyboard navigation */
+body.keyboard-navigating pre.preprocessed-mermaid {
+  pointer-events: none;
+}

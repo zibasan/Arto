@@ -14,6 +14,7 @@
 @import url("./components/tab-bar.css");
 @import url("./components/search-bar.css");
 @import url("./components/pinned-chips.css");
+@import url("./components/action-feedback.css");
 
 /* Left sidebar */
 @import url("./components/left-sidebar.css");
@@ -25,6 +26,7 @@
 /* Content area */
 @import url("./components/content.css");
 @import url("./components/content/code-copy.css");
+@import url("./components/content/content-cursor.css");
 
 /* Special windows */
 @import url("./components/preferences.css");
