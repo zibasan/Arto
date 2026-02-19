@@ -117,14 +117,41 @@ where
                 )
             }
             Event::Start(Tag::List(start)) => match start {
-                Some(1) => Event::Html(format!("<ol data-source-line=\"{}\">\n", line()).into()),
-                Some(n) => Event::Html(
-                    format!("<ol start=\"{}\" data-source-line=\"{}\">\n", n, line()).into(),
+                Some(1) => Event::Html(
+                    format!(
+                        "<ol data-source-line=\"{}\" data-source-line-end=\"{}\">\n",
+                        line(),
+                        line_end()
+                    )
+                    .into(),
                 ),
-                None => Event::Html(format!("<ul data-source-line=\"{}\">\n", line()).into()),
+                Some(n) => Event::Html(
+                    format!(
+                        "<ol start=\"{}\" data-source-line=\"{}\" data-source-line-end=\"{}\">\n",
+                        n,
+                        line(),
+                        line_end()
+                    )
+                    .into(),
+                ),
+                None => Event::Html(
+                    format!(
+                        "<ul data-source-line=\"{}\" data-source-line-end=\"{}\">\n",
+                        line(),
+                        line_end()
+                    )
+                    .into(),
+                ),
             },
             Event::Start(Tag::Item) => {
-                Event::Html(format!("<li data-source-line=\"{}\">", line()).into())
+                Event::Html(
+                    format!(
+                        "<li data-source-line=\"{}\" data-source-line-end=\"{}\">",
+                        line(),
+                        line_end()
+                    )
+                    .into(),
+                )
             }
             Event::Rule => Event::Html(format!("<hr data-source-line=\"{}\" />\n", line()).into()),
             // Preprocessed code blocks (mermaid, math): inject source line range
@@ -336,15 +363,15 @@ mod tests {
         let md = "- a\n- b\n\n1. x\n2. y";
         let result = render_with_source_lines(md);
         assert!(
-            result.contains(r#"<ul data-source-line="1">"#),
+            result.contains(r#"<ul data-source-line="1""#),
             "Unordered list should have source line: {result}"
         );
         assert!(
-            result.contains(r#"<li data-source-line="1">"#),
+            result.contains(r#"<li data-source-line="1""#),
             "First ul item should have source line: {result}"
         );
         assert!(
-            result.contains(r#"<ol data-source-line="4">"#),
+            result.contains(r#"<ol data-source-line="4""#),
             "Ordered list should have source line: {result}"
         );
     }

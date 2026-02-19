@@ -450,15 +450,15 @@ mod tests {
             "Paragraph should be on line 3: {result}"
         );
         assert!(
-            result.contains(r#"<ul data-source-line="5">"#),
+            result.contains(r#"<ul data-source-line="5""#),
             "List should be on line 5: {result}"
         );
         assert!(
-            result.contains(r#"<li data-source-line="5">"#),
+            result.contains(r#"<li data-source-line="5""#),
             "First item should be on line 5: {result}"
         );
         assert!(
-            result.contains(r#"<li data-source-line="6">"#),
+            result.contains(r#"<li data-source-line="6""#),
             "Second item should be on line 6: {result}"
         );
     }
@@ -577,7 +577,7 @@ mod tests {
         let result = render_to_html(markdown, &md_path).unwrap();
 
         assert!(
-            result.contains(r#"<ol data-source-line="1">"#),
+            result.contains(r#"<ol data-source-line="1""#),
             "Ordered list should be on line 1: {result}"
         );
     }

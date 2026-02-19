@@ -1,19 +1,21 @@
 use dioxus::prelude::*;
 use std::path::PathBuf;
 
-use super::menu_item::{ContextMenuItem, ContextMenuSubmenu, CopyMenuItem};
-use super::source_ops::{build_path_with_range, copy_markdown_source};
+use super::menu_item::{ContextMenuItem, ContextMenuSubmenu};
+use super::source_ops::build_path_with_range;
+use crate::keybindings::dispatcher::dispatch_action;
+use crate::keybindings::Action;
 
 /// "Copy Code As..." submenu: Code / Markdown / Path with Range
 #[component]
 pub(super) fn CopyCodeAsSubmenu(
-    code_source: String,
     current_file: Option<PathBuf>,
     /// Block-level source line range (for Markdown and Path with Range)
     block_source_line: Option<u32>,
     block_source_line_end: Option<u32>,
     on_close: EventHandler<()>,
 ) -> Element {
+    let state = use_context::<crate::state::AppState>();
     let has_markdown =
         current_file.is_some() && block_source_line.is_some() && block_source_line_end.is_some();
 
@@ -27,34 +29,46 @@ pub(super) fn CopyCodeAsSubmenu(
         ContextMenuSubmenu {
             label: "Copy Code As...",
 
-            CopyMenuItem { label: "Code", text: code_source.clone(), on_close }
+            ContextMenuItem {
+                label: "Code",
+                on_click: {
+                    move |_| {
+                        dispatch_action(&Action::CopyCode, state);
+                        on_close.call(());
+                    }
+                },
+            }
 
             if has_markdown {
                 ContextMenuItem {
                     label: "Markdown",
                     on_click: {
-                        let current_file = current_file.clone();
                         move |_| {
-                            if let (Some(file), Some(start), Some(end)) =
-                                (current_file.as_ref(), block_source_line, block_source_line_end)
-                            {
-                                copy_markdown_source(file, start, end);
-                            }
+                            dispatch_action(&Action::CopyAsMarkdown, state);
                             on_close.call(());
                         }
                     },
                 }
             }
 
-            if let Some((path_value, start, end)) = block_path_with_range.clone() {
-                CopyMenuItem {
+            if let Some((_path_value, start, end)) = block_path_with_range.clone() {
+                ContextMenuItem {
                     label: if start != end {
                         format!("Path with Range ({start}-{end})")
                     } else {
                         format!("Path with Line ({start})")
                     },
-                    text: path_value,
-                    on_close,
+                    on_click: {
+                        move |_| {
+                            let action = if start != end {
+                                Action::CopyFilePathWithRange
+                            } else {
+                                Action::CopyFilePathWithLine
+                            };
+                            dispatch_action(&action, state);
+                            on_close.call(());
+                        }
+                    },
                 }
             }
         }
