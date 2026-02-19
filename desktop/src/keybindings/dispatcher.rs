@@ -210,6 +210,7 @@ pub fn dispatch_action(action: &Action, mut state: AppState) {
         Action::ContentPrev => content_cursor_eval("prev"),
         Action::ContentNextHeading => content_cursor_eval("nextHeading"),
         Action::ContentPrevHeading => content_cursor_eval("prevHeading"),
+        Action::ContentOpenViewer => open_content_viewer_from_cursor(&state),
 
         // --- Directory ---
         Action::DirectoryParent => {
@@ -234,6 +235,7 @@ pub fn dispatch_action(action: &Action, mut state: AppState) {
             }
         }
         Action::FileSetParentAsRoot => set_parent_of_current_file_as_root(&mut state),
+        Action::FileToggleBookmark => toggle_bookmark_on_cursor_or_current(&mut state),
         Action::FileOpenLink => open_link_from_cursor(&mut state, false),
         Action::FileOpenLinkInNewTab => open_link_from_cursor(&mut state, true),
         Action::FileSaveImageAs => save_image_from_cursor(),
@@ -932,6 +934,101 @@ fn pick_directory() -> Option<std::path::PathBuf> {
     FileDialog::new()
         .set_directory(std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("/")))
         .pick_folder()
+}
+
+fn toggle_bookmark_on_cursor_or_current(state: &mut AppState) {
+    let target_path = get_bookmark_target_path(state).or_else(|| get_current_file(state));
+    let Some(path) = target_path else { return };
+
+    let is_bookmarked = crate::bookmarks::toggle_bookmark(&path);
+    if is_bookmarked {
+        show_action_feedback("Bookmarked");
+    } else {
+        show_action_feedback("Bookmark removed");
+    }
+}
+
+fn get_bookmark_target_path(state: &AppState) -> Option<std::path::PathBuf> {
+    match *state.focused_panel.read() {
+        FocusedPanel::LeftSidebar => state.sidebar_cursor.read().clone(),
+        FocusedPanel::QuickAccess => {
+            let cursor = *state.quick_access_cursor.read();
+            cursor.and_then(|index| {
+                let bookmarks = crate::bookmarks::BOOKMARKS.read();
+                bookmarks.items.get(index).map(|b| b.path.clone())
+            })
+        }
+        FocusedPanel::RightSidebar | FocusedPanel::Content => None,
+    }
+}
+
+fn open_content_viewer_from_cursor(state: &AppState) {
+    let theme = *state.current_theme.read();
+    spawn(async move {
+        #[derive(serde::Deserialize)]
+        #[serde(tag = "kind", rename_all = "snake_case")]
+        enum ViewerTarget {
+            Image { src: String, alt: Option<String> },
+            Math { source: String },
+            Mermaid { source: String },
+            None,
+        }
+
+        let js = r#"
+            (() => {
+                const cursor = window.Arto?.contentCursor;
+                const el = cursor?.getCurrentElement?.();
+                if (!(el instanceof HTMLElement)) { dioxus.send({ kind: 'none' }); return; }
+
+                if (el.tagName === 'IMG') {
+                    const src = cursor?.getImageSrc?.() || el.getAttribute('src') || '';
+                    if (!src) { dioxus.send({ kind: 'none' }); return; }
+                    dioxus.send({
+                        kind: 'image',
+                        src,
+                        alt: el.getAttribute('alt'),
+                    });
+                    return;
+                }
+
+                if (
+                    el.classList.contains('preprocessed-math-display') ||
+                    el.classList.contains('preprocessed-math')
+                ) {
+                    const source = el.dataset.originalContent || '';
+                    if (!source) { dioxus.send({ kind: 'none' }); return; }
+                    dioxus.send({ kind: 'math', source });
+                    return;
+                }
+
+                if (el.classList.contains('preprocessed-mermaid')) {
+                    const source = el.dataset.originalContent || '';
+                    if (!source) { dioxus.send({ kind: 'none' }); return; }
+                    dioxus.send({ kind: 'mermaid', source });
+                    return;
+                }
+
+                dioxus.send({ kind: 'none' });
+            })();
+        "#;
+        let mut eval = document::eval(js);
+        let Ok(target) = eval.recv::<ViewerTarget>().await else {
+            return;
+        };
+
+        match target {
+            ViewerTarget::Image { src, alt } => {
+                crate::window::open_or_focus_image_window(src, alt, theme);
+            }
+            ViewerTarget::Math { source } => {
+                crate::window::open_or_focus_math_window(source, theme);
+            }
+            ViewerTarget::Mermaid { source } => {
+                crate::window::open_or_focus_mermaid_window(source, theme);
+            }
+            ViewerTarget::None => {}
+        }
+    });
 }
 
 fn open_link_from_cursor(state: &mut AppState, open_in_new_tab: bool) {

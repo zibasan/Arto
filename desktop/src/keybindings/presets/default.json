@@ -148,9 +148,17 @@
     {
       "key": "Escape",
       "action": "cancel"
+    },
+    {
+      "key": "Cmd+d",
+      "action": "file.toggle_bookmark"
     }
   ],
   "content": [
+    {
+      "key": "Enter",
+      "action": "content.open_viewer"
+    },
     {
       "key": "Alt+ArrowDown",
       "action": "content.next"
