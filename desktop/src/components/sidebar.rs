@@ -5,7 +5,7 @@ pub mod quick_access;
 use dioxus::document;
 use dioxus::prelude::*;
 
-use crate::state::AppState;
+use crate::state::{AppState, FocusedPanel};
 
 #[component]
 pub fn Sidebar() -> Element {
@@ -14,6 +14,10 @@ pub fn Sidebar() -> Element {
     let is_visible = sidebar_state.open;
     let width = sidebar_state.width;
     let zoom_level = sidebar_state.zoom_level;
+    drop(sidebar_state);
+    let focused_panel = *state.focused_panel.read();
+    let is_panel_focused =
+        focused_panel == FocusedPanel::LeftSidebar || focused_panel == FocusedPanel::QuickAccess;
     let mut is_resizing = use_signal(|| false);
 
     let outer_style = if is_visible {
@@ -29,6 +33,7 @@ pub fn Sidebar() -> Element {
             class: "left-sidebar",
             class: if is_visible { "visible" },
             class: if is_resizing() { "resizing" },
+            class: if is_panel_focused { "panel-focused" },
             style: "{outer_style}",
 
             // Inner wrapper with zoom applied

@@ -8,7 +8,7 @@ use dioxus::prelude::*;
 use crate::bookmarks::{reorder_bookmark, Bookmark, BOOKMARKS, BOOKMARKS_CHANGED};
 use crate::components::bookmark_button::BookmarkButton;
 use crate::components::icon::{Icon, IconName};
-use crate::state::AppState;
+use crate::state::{AppState, FocusedPanel};
 
 /// Bookmark with cached filesystem status to avoid filesystem calls during render
 #[derive(Clone)]
@@ -60,6 +60,8 @@ pub fn QuickAccess() -> Element {
         }
     });
 
+    let is_qa_focused = *state.focused_panel.read() == FocusedPanel::QuickAccess;
+    let quick_access_cursor = *state.quick_access_cursor.read();
     let items = bookmarks.read();
 
     // Don't render if no bookmarks
@@ -98,6 +100,7 @@ pub fn QuickAccess() -> Element {
                         item_is_directory: cached.is_dir,
                         is_dragging: *dragging_index.read() == Some(index),
                         is_drop_target: *drop_target_index.read() == Some(index),
+                        is_keyboard_focused: is_qa_focused && quick_access_cursor == Some(index),
                         on_click: move |(bookmark, is_directory): (Bookmark, bool)| {
                             if is_directory {
                                 state.set_root_directory(&bookmark.path);
@@ -144,6 +147,7 @@ fn QuickAccessItem(
     item_is_directory: bool,
     is_dragging: bool,
     is_drop_target: bool,
+    is_keyboard_focused: bool,
     on_click: EventHandler<(Bookmark, bool)>,
     on_drag_start: EventHandler<usize>,
     on_drag_over: EventHandler<usize>,
@@ -168,6 +172,9 @@ fn QuickAccessItem(
     }
     if is_drop_target && !is_dragging {
         classes.push("drop-target");
+    }
+    if is_keyboard_focused {
+        classes.push("keyboard-focused");
     }
     let class_str = classes.join(" ");
 

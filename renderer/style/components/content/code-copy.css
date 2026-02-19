@@ -26,6 +26,12 @@
   opacity: 1;
 }
 
+/* Hide copy buttons during keyboard navigation */
+body.keyboard-navigating .markdown-body pre:hover .copy-button {
+  opacity: 0;
+  pointer-events: none;
+}
+
 .markdown-body .copy-button:hover {
   background-color: var(--copy-button-hover-bg);
 }

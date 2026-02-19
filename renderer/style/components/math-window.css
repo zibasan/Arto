@@ -88,3 +88,8 @@
   outline-offset: -2px;
   opacity: 0.9;
 }
+
+/* Disable hover/click during keyboard navigation */
+body.keyboard-navigating .markdown-body pre.preprocessed-math {
+  pointer-events: none;
+}

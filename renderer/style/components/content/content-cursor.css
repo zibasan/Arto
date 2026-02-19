@@ -1,0 +1,12 @@
+.content-cursor-active {
+  outline: 2px solid color-mix(in srgb, var(--accent-bg) 60%, transparent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+  background-color: color-mix(in srgb, var(--accent-bg) 8%, transparent);
+}
+
+/* Hold class is kept for JS compatibility */
+.content-cursor-active.content-cursor-hold {
+  outline: 2px solid color-mix(in srgb, var(--accent-bg) 60%, transparent);
+  background-color: color-mix(in srgb, var(--accent-bg) 8%, transparent);
+}

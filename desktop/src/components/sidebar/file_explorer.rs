@@ -9,7 +9,7 @@ use super::context_menu::{SidebarContextMenu, SidebarItemKind};
 use super::quick_access::QuickAccess;
 use crate::components::bookmark_button::BookmarkButton;
 use crate::components::icon::{Icon, IconName};
-use crate::state::AppState;
+use crate::state::{AppState, FocusedPanel};
 use crate::utils::{file::is_markdown_file, file_operations};
 use crate::watcher::FILE_WATCHER;
 
@@ -405,6 +405,13 @@ fn FileTreeNode(
         .and_then(|tab| tab.file().map(|f| f == path))
         .unwrap_or(false);
 
+    let is_keyboard_focused = *state.focused_panel.read() == FocusedPanel::LeftSidebar
+        && state
+            .sidebar_cursor
+            .read()
+            .as_ref()
+            .is_some_and(|p| p == &path);
+
     let indent_style = format!("padding-left: {}px", depth * 20);
 
     // Copy feedback state
@@ -544,6 +551,7 @@ fn FileTreeNode(
         div {
             class: "left-sidebar-tree-node",
             class: if is_active { "active" },
+            class: if is_keyboard_focused { "keyboard-focused" },
 
             // Full-row clickable design:
             // - Parent row (this div): Fallback handler for empty space clicks
