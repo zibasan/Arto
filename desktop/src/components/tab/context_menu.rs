@@ -4,6 +4,7 @@ use dioxus::desktop::tao::window::WindowId;
 use dioxus::prelude::*;
 
 use crate::components::icon::{Icon, IconName};
+use crate::keybindings::{shortcut_hint_for_context_action, KeyContext};
 
 #[component]
 pub fn TabContextMenu(
@@ -26,6 +27,7 @@ pub fn TabContextMenu(
 ) -> Element {
     let mut show_submenu = use_signal(|| false);
     let has_file = file_path.is_some();
+    let shortcut = |action| shortcut_hint_for_context_action(KeyContext::Content, action);
 
     rsx! {
         // Backdrop to close menu on outside click
@@ -43,6 +45,7 @@ pub fn TabContextMenu(
             // === Section 1: Close operations ===
             ContextMenuItem {
                 label: "Close",
+                shortcut: shortcut("tab.close"),
                 icon: Some(IconName::Close),
                 disabled: is_pinned,
                 on_click: move |_| on_close_tab.call(()),
@@ -50,11 +53,13 @@ pub fn TabContextMenu(
 
             ContextMenuItem {
                 label: "Close Others",
+                shortcut: shortcut("tab.close_others"),
                 on_click: move |_| on_close_others.call(()),
             }
 
             ContextMenuItem {
                 label: "Close All",
+                shortcut: shortcut("tab.close_all"),
                 on_click: move |_| on_close_all.call(()),
             }
 
@@ -63,6 +68,7 @@ pub fn TabContextMenu(
 
             ContextMenuItem {
                 label: if is_pinned { "Unpin Tab" } else { "Pin Tab" },
+                shortcut: shortcut("tab.toggle_pin"),
                 icon: Some(if is_pinned { IconName::PinnedOff } else { IconName::Pin }),
                 on_click: move |_| on_toggle_pin.call(()),
             }
@@ -72,6 +78,7 @@ pub fn TabContextMenu(
 
             ContextMenuItem {
                 label: "Open in New Window",
+                shortcut: shortcut("tab.open_in_new_window"),
                 disabled: disabled,
                 on_click: move |_| on_open_in_new_window.call(()),
             }
@@ -123,6 +130,7 @@ pub fn TabContextMenu(
 
             ContextMenuItem {
                 label: "Copy File Path",
+                shortcut: shortcut("clipboard.copy_file_path"),
                 icon: Some(IconName::Copy),
                 disabled: !has_file,
                 on_click: move |_| on_copy_path.call(()),
@@ -130,6 +138,7 @@ pub fn TabContextMenu(
 
             ContextMenuItem {
                 label: "Reveal in Finder",
+                shortcut: shortcut("file.reveal_in_finder"),
                 icon: Some(IconName::Folder),
                 disabled: !has_file,
                 on_click: move |_| on_reveal_in_finder.call(()),
@@ -140,6 +149,7 @@ pub fn TabContextMenu(
 
             ContextMenuItem {
                 label: "Set Parent as Root",
+                shortcut: shortcut("file.set_parent_as_root"),
                 icon: Some(IconName::FolderOpen),
                 disabled: !has_file,
                 on_click: move |_| on_set_parent_as_root.call(()),
@@ -147,6 +157,7 @@ pub fn TabContextMenu(
 
             ContextMenuItem {
                 label: "Reload",
+                shortcut: shortcut("window.reload"),
                 icon: Some(IconName::Refresh),
                 disabled: !has_file,
                 on_click: move |_| on_reload.call(()),
@@ -163,6 +174,8 @@ pub fn TabContextMenu(
 struct ContextMenuItemProps {
     #[props(into)]
     label: String,
+    #[props(default)]
+    shortcut: Option<String>,
     #[props(default)]
     icon: Option<IconName>,
     #[props(default = false)]
@@ -190,6 +203,10 @@ fn ContextMenuItem(props: ContextMenuItemProps) -> Element {
             }
 
             span { class: "context-menu-label", "{props.label}" }
+
+            if let Some(shortcut) = props.shortcut {
+                span { class: "context-menu-shortcut", "{shortcut}" }
+            }
         }
     }
 }
