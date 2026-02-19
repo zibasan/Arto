@@ -6,6 +6,22 @@ use dioxus::prelude::*;
 use crate::assets::MAIN_SCRIPT;
 use crate::components::icon::{Icon, IconName};
 
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ViewerCloseKeyEventData {
+    key: String,
+    meta_key: bool,
+    ctrl_key: bool,
+    alt_key: bool,
+}
+
+fn is_close_shortcut(key: &str, meta_key: bool, ctrl_key: bool, alt_key: bool) -> bool {
+    if alt_key || !(meta_key || ctrl_key) {
+        return false;
+    }
+    key.eq_ignore_ascii_case("w")
+}
+
 /// Handle Cmd+W and Cmd+Shift+W to close the viewer window.
 /// Call this in viewer window components to enable standard window close shortcuts.
 pub fn use_window_close_handler() {
@@ -16,6 +32,47 @@ pub fn use_window_close_handler() {
         if crate::menu::is_close_action(event) {
             window().close();
         }
+    });
+
+    // Fallback for child windows without menu accelerators.
+    // Captures Cmd/Ctrl+W (with optional Shift) directly from keydown events.
+    use_effect(move || {
+        spawn(async move {
+            let mut eval = dioxus::document::eval(indoc::indoc! {r#"
+                (() => {
+                    const handler = (event) => {
+                        const target = event.target;
+                        const isEditable =
+                            target instanceof HTMLInputElement ||
+                            target instanceof HTMLTextAreaElement ||
+                            target instanceof HTMLSelectElement ||
+                            (target instanceof HTMLElement && target.isContentEditable);
+                        if (isEditable) return;
+
+                        if (event.altKey) return;
+                        if (!(event.metaKey || event.ctrlKey)) return;
+                        if (event.key.toLowerCase() !== "w") return;
+
+                        event.preventDefault();
+                        event.stopPropagation();
+                        dioxus.send({
+                            key: event.key,
+                            metaKey: event.metaKey,
+                            ctrlKey: event.ctrlKey,
+                            altKey: event.altKey,
+                        });
+                    };
+
+                    document.addEventListener("keydown", handler, { capture: true });
+                })();
+            "#});
+
+            while let Ok(data) = eval.recv::<ViewerCloseKeyEventData>().await {
+                if is_close_shortcut(&data.key, data.meta_key, data.ctrl_key, data.alt_key) {
+                    window().close();
+                }
+            }
+        });
     });
 }
 
@@ -168,4 +225,34 @@ pub fn use_theme_dispatch(current_theme: Signal<crate::theme::Theme>) {
             }
         });
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_close_shortcut;
+
+    #[test]
+    fn matches_cmd_w() {
+        assert!(is_close_shortcut("w", true, false, false));
+    }
+
+    #[test]
+    fn matches_cmd_shift_w() {
+        assert!(is_close_shortcut("W", true, false, false));
+    }
+
+    #[test]
+    fn matches_ctrl_w_for_non_macos() {
+        assert!(is_close_shortcut("w", false, true, false));
+    }
+
+    #[test]
+    fn ignores_non_w_key() {
+        assert!(!is_close_shortcut("q", true, false, false));
+    }
+
+    #[test]
+    fn ignores_alt_modified_w() {
+        assert!(!is_close_shortcut("w", true, false, true));
+    }
 }
