@@ -463,6 +463,15 @@ fn FileTreeNode(
         }
     };
 
+    // Handler for "Change Root Directory"
+    let handle_change_root_directory = {
+        let path = path.clone();
+        move |_| {
+            state.set_root_directory(&path);
+            show_context_menu.set(false);
+        }
+    };
+
     // Handler for "Open in New Window"
     let handle_open_in_new_window = {
         let path = path.clone();
@@ -554,9 +563,8 @@ fn FileTreeNode(
             class: if is_keyboard_focused { "keyboard-focused" },
 
             // Full-row clickable design:
-            // - Parent row (this div): Fallback handler for empty space clicks
             // - Chevron: Expand/collapse (stops propagation)
-            // - Folder/File icon+label: Navigate/open (stops propagation)
+            // - Folder/File icon+label: Expand/open (stops propagation)
             // This allows the entire row to be interactive while providing distinct
             // click areas for different actions.
             div {
@@ -566,20 +574,24 @@ fn FileTreeNode(
                 onclick: {
                     let path = path.clone();
                     move |_| {
-                        // Click anywhere on the row: open file (files) or set as root (directories)
+                        // Click anywhere on the row: open file (files) or toggle expansion (directories)
                         if is_dir {
-                            state.set_root_directory(&path);
+                            state.toggle_directory_expansion(&path);
                         } else {
                             state.open_file(&path);
                         }
                     }
                 },
 
-                // Directory: chevron toggles expansion, folder+label changes root
+                // Directory: chevron and folder+label both toggle expansion
                 if is_dir {
                     // Chevron: click to expand/collapse
                     span {
-                        class: "left-sidebar-tree-chevron-wrapper",
+                        class: if is_expanded {
+                            "left-sidebar-tree-chevron-wrapper expanded"
+                        } else {
+                            "left-sidebar-tree-chevron-wrapper"
+                        },
                         onclick: {
                             let path = path.clone();
                             move |evt| {
@@ -588,20 +600,20 @@ fn FileTreeNode(
                             }
                         },
                         Icon {
-                            name: if is_expanded { IconName::ChevronDown } else { IconName::ChevronRight },
+                            name: IconName::ChevronRight,
                             size: 16,
                             class: "left-sidebar-tree-chevron",
                         }
                     }
 
-                    // Folder icon + label: click to set as root directory
+                    // Folder icon + label: click to expand/collapse
                     span {
                         class: "left-sidebar-tree-dir-link",
                         onclick: {
                             let path = path.clone();
                             move |evt| {
                                 evt.stop_propagation();
-                                state.set_root_directory(&path);
+                                state.toggle_directory_expansion(&path);
                             }
                         },
                         Icon {
@@ -684,6 +696,7 @@ fn FileTreeNode(
                 on_open: handle_open,
                 on_open_in_new_window: handle_open_in_new_window,
                 on_move_to_window: handle_open_in_window,
+                on_change_root_directory: handle_change_root_directory,
                 on_toggle_bookmark: handle_toggle_bookmark,
                 on_copy_path: handle_copy_path,
                 on_reveal_in_finder: handle_reveal_in_finder,
