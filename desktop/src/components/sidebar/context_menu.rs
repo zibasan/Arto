@@ -22,6 +22,7 @@ pub fn SidebarContextMenu(
     on_open: EventHandler<()>,
     on_open_in_new_window: EventHandler<()>,
     on_move_to_window: EventHandler<WindowId>,
+    on_change_root_directory: EventHandler<()>,
     on_toggle_bookmark: EventHandler<()>,
     on_copy_path: EventHandler<()>,
     on_reveal_in_finder: EventHandler<()>,
@@ -64,6 +65,15 @@ pub fn SidebarContextMenu(
                 label: open_label,
                 icon: Some(if is_file { IconName::File } else { IconName::FolderOpen }),
                 on_click: move |_| on_open.call(()),
+            }
+
+            if !is_file {
+                ContextMenuItem {
+                    label: "Change Root Directory",
+                    shortcut: shortcut("cursor.enter"),
+                    icon: Some(IconName::FolderOpen),
+                    on_click: move |_| on_change_root_directory.call(()),
+                }
             }
 
             ContextMenuItem {

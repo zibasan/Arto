@@ -349,6 +349,10 @@
   flex-shrink: 0;
 }
 
+.left-sidebar-tree-chevron-wrapper.expanded .left-sidebar-tree-chevron {
+  transform: rotate(90deg);
+}
+
 /* Directory/File link - clickable area for folder icon + label */
 .left-sidebar-tree-dir-link,
 .left-sidebar-tree-file-link {
@@ -463,4 +467,3 @@
   opacity: var(--opacity-hover);
   color: var(--accent-bg);
 }
-
