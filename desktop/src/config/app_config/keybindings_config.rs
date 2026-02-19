@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-/// Per-context keybinding definition stored directly as `config.keybindings`.
+/// Per-context keybinding definition stored in `mappings.json`.
 ///
 /// `global` bindings are always visible (fallback for all contexts).
 /// Other fields hold bindings active only in that specific context.
@@ -29,25 +29,19 @@ pub struct KeyAction {
     pub action: String,
 }
 
-impl BindingSet {
-    /// Returns true if all context fields are empty.
-    pub fn is_empty(&self) -> bool {
-        self.global.is_empty()
-            && self.content.is_empty()
-            && self.sidebar.is_empty()
-            && self.quick_access.is_empty()
-            && self.right_sidebar.is_empty()
-            && self.search.is_empty()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn default_is_empty() {
-        assert!(BindingSet::default().is_empty());
+        let set = BindingSet::default();
+        assert!(set.global.is_empty());
+        assert!(set.content.is_empty());
+        assert!(set.sidebar.is_empty());
+        assert!(set.quick_access.is_empty());
+        assert!(set.right_sidebar.is_empty());
+        assert!(set.search.is_empty());
     }
 
     #[test]
@@ -72,7 +66,12 @@ mod tests {
     #[test]
     fn empty_json_uses_defaults() {
         let set: BindingSet = serde_json::from_str("{}").unwrap();
-        assert!(set.is_empty());
+        assert!(set.global.is_empty());
+        assert!(set.content.is_empty());
+        assert!(set.sidebar.is_empty());
+        assert!(set.quick_access.is_empty());
+        assert!(set.right_sidebar.is_empty());
+        assert!(set.search.is_empty());
     }
 
     #[test]
@@ -95,14 +94,14 @@ mod tests {
     }
 
     #[test]
-    fn is_empty_check() {
-        assert!(!BindingSet {
+    fn non_empty_when_global_has_item() {
+        let set = BindingSet {
             global: vec![KeyAction {
                 key: "j".to_string(),
                 action: "scroll.down".to_string(),
             }],
             ..Default::default()
-        }
-        .is_empty());
+        };
+        assert!(!set.global.is_empty());
     }
 }

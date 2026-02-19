@@ -38,6 +38,7 @@ pub struct Config {
     pub window_position: WindowPositionConfig,
     pub window_size: WindowSizeConfig,
     pub zoom: ZoomConfig,
+    #[serde(skip_serializing, skip_deserializing, default)]
     pub keybindings: BindingSet,
 }
 
@@ -47,6 +48,15 @@ mod tests {
     use super::*;
     use crate::theme::Theme;
     use std::path::PathBuf;
+
+    fn assert_keybindings_empty(set: &BindingSet) {
+        assert!(set.global.is_empty());
+        assert!(set.content.is_empty());
+        assert!(set.sidebar.is_empty());
+        assert!(set.quick_access.is_empty());
+        assert!(set.right_sidebar.is_empty());
+        assert!(set.search.is_empty());
+    }
 
     #[test]
     fn test_config_default() {
@@ -101,7 +111,7 @@ mod tests {
         assert_eq!(config.zoom.on_new_window, NewWindowBehavior::Default);
 
         // Keybindings defaults
-        assert!(config.keybindings.is_empty());
+        assert_keybindings_empty(&config.keybindings);
 
         // Window position defaults
         assert_eq!(
@@ -192,11 +202,18 @@ mod tests {
                 on_startup: StartupBehavior::LastClosed,
                 on_new_window: NewWindowBehavior::LastFocused,
             },
-            keybindings: BindingSet::default(),
+            keybindings: BindingSet {
+                global: vec![KeyAction {
+                    key: "Ctrl+k".to_string(),
+                    action: "tab.close".to_string(),
+                }],
+                ..Default::default()
+            },
         };
 
         let json = serde_json::to_string_pretty(&config).unwrap();
         let parsed: Config = serde_json::from_str(&json).unwrap();
+        assert!(!json.contains("\"keybindings\""));
 
         assert_eq!(parsed.theme.default_theme, Theme::Dark);
         assert_eq!(parsed.theme.on_startup, StartupBehavior::LastClosed);
@@ -229,7 +246,7 @@ mod tests {
         assert_eq!(parsed.zoom.default_zoom_level, 1.5);
         assert_eq!(parsed.zoom.on_startup, StartupBehavior::LastClosed);
         assert_eq!(parsed.zoom.on_new_window, NewWindowBehavior::LastFocused);
-        assert!(parsed.keybindings.is_empty());
+        assert_keybindings_empty(&parsed.keybindings);
     }
 
     #[test]
