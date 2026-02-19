@@ -1,0 +1,303 @@
+{
+  "$schema": "./preset.schema.json",
+  "global": [
+    {
+      "key": "Cmd+n",
+      "action": "window.new"
+    },
+    {
+      "key": "Cmd+t",
+      "action": "tab.new"
+    },
+    {
+      "key": "Cmd+w",
+      "action": "tab.close"
+    },
+    {
+      "key": "Cmd+o",
+      "action": "file.open"
+    },
+    {
+      "key": "Cmd+Shift+o",
+      "action": "file.open_directory"
+    },
+    {
+      "key": "Cmd+Shift+r",
+      "action": "file.reveal_in_finder"
+    },
+    {
+      "key": "Cmd+Shift+w",
+      "action": "window.close"
+    },
+    {
+      "key": "Cmd+f",
+      "action": "search.open"
+    },
+    {
+      "key": "Cmd+g",
+      "action": "search.next"
+    },
+    {
+      "key": "Cmd+Shift+g",
+      "action": "search.prev"
+    },
+    {
+      "key": "Cmd+r",
+      "action": "window.reload"
+    },
+    {
+      "key": "Cmd+b",
+      "action": "window.toggle_sidebar"
+    },
+    {
+      "key": "Cmd+Shift+b",
+      "action": "window.toggle_right_sidebar"
+    },
+    {
+      "key": "Cmd+0",
+      "action": "zoom.reset"
+    },
+    {
+      "key": "Cmd+Equal",
+      "action": "zoom.in"
+    },
+    {
+      "key": "Cmd+Minus",
+      "action": "zoom.out"
+    },
+    {
+      "key": "Cmd+BracketLeft",
+      "action": "history.back"
+    },
+    {
+      "key": "Cmd+BracketRight",
+      "action": "history.forward"
+    },
+    {
+      "key": "Cmd+Comma",
+      "action": "file.preferences"
+    },
+    {
+      "key": "Cmd+Alt+w",
+      "action": "tab.close_all"
+    },
+    {
+      "key": "Cmd+Alt+Shift+w",
+      "action": "tab.close_others"
+    },
+    {
+      "key": "Cmd+Alt+p",
+      "action": "tab.toggle_pin"
+    },
+    {
+      "key": "Cmd+Enter",
+      "action": "file.open_link"
+    },
+    {
+      "key": "Cmd+Shift+Enter",
+      "action": "file.open_link_in_new_tab"
+    },
+    {
+      "key": "Cmd+Slash",
+      "action": "help.show_keyboard_shortcuts"
+    },
+    {
+      "key": "F1",
+      "action": "help.show_keyboard_shortcuts"
+    },
+    {
+      "key": "ArrowDown",
+      "action": "scroll.down"
+    },
+    {
+      "key": "ArrowUp",
+      "action": "scroll.up"
+    },
+    {
+      "key": "PageDown",
+      "action": "scroll.page_down"
+    },
+    {
+      "key": "PageUp",
+      "action": "scroll.page_up"
+    },
+    {
+      "key": "Home",
+      "action": "scroll.top"
+    },
+    {
+      "key": "End",
+      "action": "scroll.bottom"
+    },
+    {
+      "key": "Ctrl+Tab",
+      "action": "tab.next"
+    },
+    {
+      "key": "Ctrl+Shift+Tab",
+      "action": "tab.prev"
+    },
+    {
+      "key": "Ctrl+ArrowLeft",
+      "action": "focus.left_sidebar"
+    },
+    {
+      "key": "Ctrl+ArrowRight",
+      "action": "focus.right_sidebar"
+    },
+    {
+      "key": "Escape",
+      "action": "cancel"
+    }
+  ],
+  "content": [
+    {
+      "key": "Alt+ArrowDown",
+      "action": "content.next"
+    },
+    {
+      "key": "Alt+ArrowUp",
+      "action": "content.prev"
+    },
+    {
+      "key": "Alt+Shift+ArrowDown",
+      "action": "content.next_heading"
+    },
+    {
+      "key": "Alt+Shift+ArrowUp",
+      "action": "content.prev_heading"
+    },
+    {
+      "key": "Ctrl+ArrowLeft",
+      "action": "focus.left_sidebar"
+    },
+    {
+      "key": "Ctrl+ArrowRight",
+      "action": "focus.right_sidebar"
+    }
+  ],
+  "search": [
+    {
+      "key": "Enter",
+      "action": "search.next"
+    },
+    {
+      "key": "Shift+Enter",
+      "action": "search.prev"
+    },
+    {
+      "key": "Escape",
+      "action": "search.clear"
+    },
+    {
+      "key": "Cmd+Enter",
+      "action": "search.pin_current"
+    }
+  ],
+  "sidebar": [
+    {
+      "key": "ArrowDown",
+      "action": "cursor.down"
+    },
+    {
+      "key": "ArrowUp",
+      "action": "cursor.up"
+    },
+    {
+      "key": "ArrowRight",
+      "action": "cursor.open"
+    },
+    {
+      "key": "Enter",
+      "action": "cursor.enter"
+    },
+    {
+      "key": "ArrowLeft",
+      "action": "cursor.collapse"
+    },
+    {
+      "key": "Backspace",
+      "action": "directory.parent"
+    },
+    {
+      "key": "Cmd+BracketLeft",
+      "action": "directory.back"
+    },
+    {
+      "key": "Cmd+BracketRight",
+      "action": "directory.forward"
+    },
+    {
+      "key": "Ctrl+ArrowLeft",
+      "action": "window.toggle_sidebar"
+    },
+    {
+      "key": "Ctrl+ArrowRight",
+      "action": "focus.content"
+    },
+    {
+      "key": "Ctrl+ArrowDown",
+      "action": "focus.quick_access"
+    }
+  ],
+  "rightSidebar": [
+    {
+      "key": "ArrowDown",
+      "action": "cursor.down"
+    },
+    {
+      "key": "ArrowUp",
+      "action": "cursor.up"
+    },
+    {
+      "key": "ArrowRight",
+      "action": "cursor.open"
+    },
+    {
+      "key": "Enter",
+      "action": "cursor.open"
+    },
+    {
+      "key": "ArrowLeft",
+      "action": "cursor.collapse"
+    },
+    {
+      "key": "Ctrl+ArrowRight",
+      "action": "window.toggle_right_sidebar"
+    },
+    {
+      "key": "Ctrl+ArrowLeft",
+      "action": "focus.content"
+    }
+  ],
+  "quickAccess": [
+    {
+      "key": "ArrowDown",
+      "action": "cursor.down"
+    },
+    {
+      "key": "ArrowUp",
+      "action": "cursor.up"
+    },
+    {
+      "key": "ArrowRight",
+      "action": "cursor.open"
+    },
+    {
+      "key": "Enter",
+      "action": "cursor.open"
+    },
+    {
+      "key": "ArrowLeft",
+      "action": "cursor.collapse"
+    },
+    {
+      "key": "Ctrl+ArrowUp",
+      "action": "focus.left_sidebar"
+    },
+    {
+      "key": "Ctrl+ArrowRight",
+      "action": "focus.content"
+    }
+  ]
+}

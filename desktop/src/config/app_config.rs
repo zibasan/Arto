@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 mod behavior;
 mod directory_config;
 mod file_open_behavior;
+mod keybindings_config;
 mod right_sidebar_config;
 mod sidebar_config;
 mod theme_config;
@@ -14,6 +15,7 @@ mod zoom_config;
 pub use behavior::{NewWindowBehavior, StartupBehavior};
 pub use directory_config::DirectoryConfig;
 pub use file_open_behavior::FileOpenBehavior;
+pub use keybindings_config::{BindingSet, KeyAction};
 pub use right_sidebar_config::{RightSidebarConfig, DEFAULT_RIGHT_SIDEBAR_WIDTH};
 pub use sidebar_config::{normalize_zoom_level, SidebarConfig};
 pub use theme_config::ThemeConfig;
@@ -36,6 +38,7 @@ pub struct Config {
     pub window_position: WindowPositionConfig,
     pub window_size: WindowSizeConfig,
     pub zoom: ZoomConfig,
+    pub keybindings: BindingSet,
 }
 
 #[cfg(test)]
@@ -96,6 +99,9 @@ mod tests {
         assert_eq!(config.zoom.default_zoom_level, 1.0);
         assert_eq!(config.zoom.on_startup, StartupBehavior::Default);
         assert_eq!(config.zoom.on_new_window, NewWindowBehavior::Default);
+
+        // Keybindings defaults
+        assert!(config.keybindings.is_empty());
 
         // Window position defaults
         assert_eq!(
@@ -186,6 +192,7 @@ mod tests {
                 on_startup: StartupBehavior::LastClosed,
                 on_new_window: NewWindowBehavior::LastFocused,
             },
+            keybindings: BindingSet::default(),
         };
 
         let json = serde_json::to_string_pretty(&config).unwrap();
@@ -222,6 +229,7 @@ mod tests {
         assert_eq!(parsed.zoom.default_zoom_level, 1.5);
         assert_eq!(parsed.zoom.on_startup, StartupBehavior::LastClosed);
         assert_eq!(parsed.zoom.on_new_window, NewWindowBehavior::LastFocused);
+        assert!(parsed.keybindings.is_empty());
     }
 
     #[test]

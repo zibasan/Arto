@@ -30,11 +30,19 @@ impl Config {
         let path = Self::path();
 
         if !path.exists() {
-            return Ok(Config::default());
+            return Ok(Config {
+                keybindings: crate::keybindings::default_bindings(),
+                ..Default::default()
+            });
         }
 
         let content = fs::read_to_string(&path)?;
-        let config: Config = serde_json::from_str(&content)?;
+        let raw: serde_json::Value = serde_json::from_str(&content)?;
+        let mut config: Config = serde_json::from_value(raw.clone())?;
+
+        if should_populate_default_keybindings(&raw, &config) {
+            config.keybindings = crate::keybindings::default_bindings();
+        }
 
         tracing::debug!(path = %path.display(), "Configuration loaded");
 
@@ -57,6 +65,14 @@ impl Config {
 
         Ok(())
     }
+}
+
+fn should_populate_default_keybindings(raw: &serde_json::Value, config: &Config) -> bool {
+    let has_keybindings_field = raw
+        .as_object()
+        .is_some_and(|obj| obj.contains_key("keybindings"));
+
+    !has_keybindings_field && config.keybindings.is_empty()
 }
 
 /// Global configuration instance

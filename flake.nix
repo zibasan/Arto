@@ -92,6 +92,7 @@
                 (craneLib.fileset.commonCargoSources root)
                 (root + /assets)
                 (root + /Dioxus.toml)
+                (root + /src/keybindings/presets)
                 (lib.fileset.maybeMissing (root + /VERSION))
               ];
             };
