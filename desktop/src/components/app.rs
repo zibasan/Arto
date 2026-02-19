@@ -23,6 +23,7 @@ use super::tab::TabBar;
 use crate::assets::MAIN_SCRIPT;
 use crate::drag;
 use crate::events::{ActiveDragUpdate, ACTIVE_DRAG_UPDATE};
+use crate::keybindings::{self, Action, KeyContext};
 use crate::menu;
 use crate::state::{AppState, PersistedState, Tab};
 use crate::theme::Theme;
@@ -33,6 +34,7 @@ use listeners::setup_cross_window_open_listeners;
 
 /// Left mouse button ID for DeviceEvent::Button (platform-dependent raw value)
 const MOUSE_BUTTON_LEFT: u32 = 0;
+const MOD_CONTROL: u32 = 0x08;
 
 #[component]
 pub fn App(
@@ -120,6 +122,12 @@ pub fn App(
 
     // Setup search handlers at App level (window-wide feature)
     use_search_handler(state);
+
+    // Toggle for keyboard shortcut help overlay (which-key style)
+    let shortcut_overlay_visibility = use_signal(|| ShortcutOverlayVisibility::Hidden);
+
+    // Set up keybinding engine (keyboard shortcut processing)
+    setup_keybinding_engine(state, shortcut_overlay_visibility);
 
     // Handle menu events (only state-dependent events, not global ones)
     use_muda_event_handler(move |event| {
@@ -284,6 +292,20 @@ pub fn App(
         crate::window::close_child_windows_for_parent(window_id);
     });
 
+    let focused_panel = *state.focused_panel.read();
+    let focused_context = focused_panel.key_context();
+    let shortcut_help_columns = if !matches!(
+        *shortcut_overlay_visibility.read(),
+        ShortcutOverlayVisibility::Hidden
+    ) {
+        split_shortcut_help_columns(
+            build_shortcut_help_items(focused_context),
+            state.size.read().width,
+        )
+    } else {
+        Vec::new()
+    };
+
     rsx! {
         div {
             class: "app-container",
@@ -322,6 +344,20 @@ pub fn App(
                 DragDropOverlay {}
             }
 
+            if !matches!(
+                *shortcut_overlay_visibility.read(),
+                ShortcutOverlayVisibility::Hidden
+            ) {
+                ShortcutHelpOverlay {
+                    columns: shortcut_help_columns,
+                    is_closing: matches!(
+                        *shortcut_overlay_visibility.read(),
+                        ShortcutOverlayVisibility::Closing
+                    ),
+                    on_close: move |_| close_shortcut_overlay(shortcut_overlay_visibility),
+                }
+            }
+
             // Content context menu (rendered at App level to prevent FileViewer re-renders)
             if let Some(menu_state) = CONTENT_CONTEXT_MENU.read().as_ref() {
                 ContentContextMenu {
@@ -337,11 +373,154 @@ pub fn App(
                     table_tsv: menu_state.data.table_tsv.clone(),
                     table_source_line: menu_state.data.table_source_line,
                     table_source_line_end: menu_state.data.table_source_line_end,
-                    on_close: move |_| close_context_menu(),
+                    on_close: move |_| {
+                        close_context_menu();
+                        crate::keybindings::dispatcher::content_cursor_eval("clearCursorDeferred");
+                    },
                 }
             }
         }
     }
+}
+
+/// Key event data received from JS keyboard interceptor via dioxus.send().
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct KeyEventData {
+    key: String,
+    modifiers: u32,
+    repeat: bool,
+    #[serde(default)]
+    search_focused: bool,
+}
+
+/// Set up the keybinding engine with JS keyboard interceptor bridge.
+///
+/// Creates the engine from current config, then establishes a JS → Rust bridge:
+/// JS keyboard interceptor captures keydown events → sends via dioxus.send() →
+/// Rust recv loop processes through engine → dispatches matched actions.
+///
+/// The engine is wrapped in `Signal<RefCell<>>` so that a separate config-change
+/// listener can rebuild it without interrupting the keyboard event loop.
+fn setup_keybinding_engine(
+    mut state: AppState,
+    shortcut_overlay_visibility: Signal<ShortcutOverlayVisibility>,
+) {
+    use crate::config::{CONFIG, CONFIG_CHANGED_BROADCAST};
+    use crate::keybindings::dispatcher::dispatch_action;
+    use crate::keybindings::{KeyMatchResult, KeybindingEngine};
+    use crate::shortcut::KeyChord;
+    use std::cell::RefCell;
+
+    // use_signal must be called at component render level (not inside use_hook)
+    let initial_config = CONFIG.read().keybindings.clone();
+    let engine = use_signal(|| RefCell::new(KeybindingEngine::new(&initial_config)));
+
+    // spawn/spawn_forever wrapped in use_hook to run only once
+    use_hook(move || {
+        // Keyboard event processing loop
+        spawn(async move {
+            // Wait for JS keyboard API to be ready, then register callback.
+            // Retries up to 50 times (2.5s) before giving up.
+            let mut eval = document::eval(
+                r#"
+            (async () => {
+                let retries = 0;
+                while (!window.Arto?.keyboard?.onKeydown && retries++ < 50) {
+                    await new Promise(r => setTimeout(r, 50));
+                }
+                if (!window.Arto?.keyboard?.onKeydown) {
+                    console.error("Keyboard interceptor API not available after timeout");
+                    return;
+                }
+                window.Arto.keyboard.onKeydown((data) => {
+                    dioxus.send(data);
+                });
+            })();
+            "#,
+            );
+
+            // If JS initialization fails (timeout), recv returns Err immediately and
+            // the loop never starts. Log a warning so the issue is diagnosable.
+            let mut received_any = false;
+            while let Ok(data) = eval.recv::<KeyEventData>().await {
+                if !received_any {
+                    received_any = true;
+                }
+                let chord = KeyChord::from_js_event(&data.key, data.modifiers);
+                if chord.is_modifier_only() {
+                    continue;
+                }
+                let overlay_visible = is_shortcut_overlay_visible(shortcut_overlay_visibility);
+                if overlay_visible
+                    && handle_shortcut_overlay_close_key(&data, shortcut_overlay_visibility)
+                {
+                    engine.read().borrow_mut().reset();
+                    continue;
+                }
+                if overlay_visible && handle_shortcut_overlay_scroll_key(&data) {
+                    continue;
+                }
+
+                let context = if data.search_focused {
+                    KeyContext::Search
+                } else {
+                    state.focused_panel.read().key_context()
+                };
+                let result = engine
+                    .read()
+                    .borrow_mut()
+                    .process_key(&chord, data.repeat, context);
+
+                match result {
+                    KeyMatchResult::Matched(action) => {
+                        if overlay_visible {
+                            engine.read().borrow_mut().reset();
+                            if action == Action::Cancel {
+                                close_shortcut_overlay(shortcut_overlay_visibility);
+                            } else if action == Action::HelpShowKeyboardShortcuts {
+                                toggle_shortcut_overlay(shortcut_overlay_visibility);
+                            }
+                            continue;
+                        }
+                        if action == Action::Cancel {
+                            // Cancel chain: reset engine state + return focus to content + close search + clear content cursor
+                            engine.read().borrow_mut().reset();
+                            state.focused_panel.set(crate::state::FocusedPanel::Content);
+                            if *state.search_open.read() {
+                                state.toggle_search();
+                            }
+                            crate::keybindings::dispatcher::content_cursor_eval("clearCursor");
+                            close_shortcut_overlay(shortcut_overlay_visibility);
+                        } else if action == Action::HelpShowKeyboardShortcuts {
+                            engine.read().borrow_mut().reset();
+                            toggle_shortcut_overlay(shortcut_overlay_visibility);
+                        } else {
+                            dispatch_action(&action, state);
+                        }
+                    }
+                    KeyMatchResult::Pending | KeyMatchResult::NoMatch => {
+                        if overlay_visible {
+                            engine.read().borrow_mut().reset();
+                        }
+                    }
+                }
+            }
+            if !received_any {
+                tracing::warn!("Keybinding engine: JS keyboard interceptor failed to initialize");
+            }
+        });
+
+        // Config change listener: rebuild engine when keybindings are saved
+        dioxus_core::spawn_forever(async move {
+            let mut rx = CONFIG_CHANGED_BROADCAST.subscribe();
+            while rx.recv().await.is_ok() {
+                let new_config = CONFIG.read().keybindings.clone();
+                *engine.read().borrow_mut() = KeybindingEngine::new(&new_config);
+                tracing::debug!("Keybinding engine rebuilt after config change");
+            }
+        });
+    }); // use_hook
 }
 
 fn sync_window_metrics(
@@ -374,5 +553,259 @@ fn DragDropOverlay() -> Element {
                 }
             }
         }
+    }
+}
+
+#[derive(Clone, PartialEq)]
+struct ShortcutHelpItem {
+    key: String,
+    action: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ShortcutOverlayVisibility {
+    Hidden,
+    Visible,
+    Closing,
+}
+
+/// Build effective shortcut list for the currently focused context.
+///
+/// Context-specific bindings override global bindings when the same key sequence exists.
+fn build_shortcut_help_items(context: KeyContext) -> Vec<ShortcutHelpItem> {
+    use std::collections::BTreeMap;
+
+    let bindings = keybindings::resolve_bindings(&crate::config::CONFIG.read().keybindings);
+    let mut map = BTreeMap::<String, (Option<KeyContext>, Action)>::new();
+
+    for binding in bindings {
+        if binding.context.is_some() && binding.context != Some(context) {
+            continue;
+        }
+
+        let sequence = binding.sequence.to_string();
+        match map.get(&sequence) {
+            None => {
+                map.insert(sequence, (binding.context, binding.action));
+            }
+            Some((existing_context, _)) => {
+                if existing_context.is_none() && binding.context.is_some() {
+                    map.insert(sequence, (binding.context, binding.action));
+                }
+            }
+        }
+    }
+
+    map.into_iter()
+        .map(|(key, (_source_ctx, action))| ShortcutHelpItem {
+            key,
+            action: action_label(action),
+        })
+        .collect()
+}
+
+fn shortcut_column_count(window_width: u32) -> usize {
+    match window_width {
+        0..=760 => 1,
+        761..=1080 => 2,
+        1081..=1400 => 3,
+        1401..=1720 => 4,
+        _ => 5,
+    }
+}
+
+fn split_shortcut_help_columns(
+    items: Vec<ShortcutHelpItem>,
+    window_width: u32,
+) -> Vec<Vec<ShortcutHelpItem>> {
+    if items.is_empty() {
+        return Vec::new();
+    }
+    let columns = shortcut_column_count(window_width).min(items.len());
+    let rows_per_column = items.len().div_ceil(columns);
+
+    let mut result = Vec::with_capacity(columns);
+    for col in 0..columns {
+        let start = col * rows_per_column;
+        if start >= items.len() {
+            break;
+        }
+        let end = (start + rows_per_column).min(items.len());
+        result.push(items[start..end].to_vec());
+    }
+    result
+}
+
+fn action_label(action: Action) -> String {
+    let action_name = action.to_string();
+    let display_name = action_name
+        .strip_prefix("clipboard.")
+        .or_else(|| action_name.strip_prefix("help."))
+        .unwrap_or(action_name.as_str());
+
+    display_name
+        .split('.')
+        .flat_map(|part| part.split('_'))
+        .map(|word| {
+            let mut chars = word.chars();
+            match chars.next() {
+                None => String::new(),
+                Some(c) => c.to_uppercase().collect::<String>() + chars.as_str(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn is_shortcut_overlay_visible(visibility: Signal<ShortcutOverlayVisibility>) -> bool {
+    !matches!(*visibility.read(), ShortcutOverlayVisibility::Hidden)
+}
+
+fn close_shortcut_overlay(mut visibility: Signal<ShortcutOverlayVisibility>) {
+    if matches!(*visibility.read(), ShortcutOverlayVisibility::Hidden) {
+        return;
+    }
+    visibility.set(ShortcutOverlayVisibility::Closing);
+    spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(140)).await;
+        if matches!(*visibility.read(), ShortcutOverlayVisibility::Closing) {
+            visibility.set(ShortcutOverlayVisibility::Hidden);
+        }
+    });
+}
+
+fn toggle_shortcut_overlay(mut visibility: Signal<ShortcutOverlayVisibility>) {
+    let current = *visibility.read();
+    match current {
+        ShortcutOverlayVisibility::Hidden => visibility.set(ShortcutOverlayVisibility::Visible),
+        ShortcutOverlayVisibility::Visible | ShortcutOverlayVisibility::Closing => {
+            close_shortcut_overlay(visibility);
+        }
+    }
+}
+
+fn handle_shortcut_overlay_scroll_key(data: &KeyEventData) -> bool {
+    let base = data.key.as_str();
+    let ctrl_only = data.modifiers == MOD_CONTROL;
+    let no_mod = data.modifiers == 0;
+    let delta = if no_mod && (base == "j" || base == "ArrowDown") {
+        Some(56)
+    } else if no_mod && (base == "k" || base == "ArrowUp") {
+        Some(-56)
+    } else if ctrl_only && (base.eq_ignore_ascii_case("n")) {
+        Some(56)
+    } else if ctrl_only && (base.eq_ignore_ascii_case("p")) {
+        Some(-56)
+    } else {
+        None
+    };
+    if let Some(px) = delta {
+        scroll_shortcut_help_list(px);
+        return true;
+    }
+    false
+}
+
+fn handle_shortcut_overlay_close_key(
+    data: &KeyEventData,
+    visibility: Signal<ShortcutOverlayVisibility>,
+) -> bool {
+    if data.modifiers == 0 && data.key == "Escape" {
+        close_shortcut_overlay(visibility);
+        return true;
+    }
+    false
+}
+
+fn scroll_shortcut_help_list(px: i32) {
+    let script = format!(
+        r#"
+        (() => {{
+            const list = document.querySelector('.shortcut-help-list');
+            if (!list) return;
+            list.scrollBy({{ top: {px}, behavior: 'smooth' }});
+        }})();
+        "#
+    );
+    let _ = document::eval(&script);
+}
+
+#[component]
+fn ShortcutHelpOverlay(
+    columns: Vec<Vec<ShortcutHelpItem>>,
+    is_closing: bool,
+    on_close: EventHandler<()>,
+) -> Element {
+    let columns_len = columns.len().max(1);
+    let columns_style = format!("--shortcut-columns: {columns_len};");
+
+    rsx! {
+        div {
+            class: if is_closing { "shortcut-help-overlay is-closing" } else { "shortcut-help-overlay" },
+            onclick: move |_| on_close.call(()),
+            div {
+                class: if is_closing { "shortcut-help-panel is-closing" } else { "shortcut-help-panel" },
+                onclick: move |evt| evt.stop_propagation(),
+                div {
+                    class: "shortcut-help-list",
+                    div {
+                        class: "shortcut-help-columns",
+                        style: "{columns_style}",
+                        for (index, column_items) in columns.into_iter().enumerate() {
+                            div {
+                                class: if index == 0 { "shortcut-help-column" } else { "shortcut-help-column shortcut-help-column--with-separator" },
+                                table {
+                                    class: "shortcut-help-table",
+                                    tbody {
+                                        for item in column_items {
+                                            tr {
+                                                class: "shortcut-help-row",
+                                                td {
+                                                    class: "shortcut-help-cell shortcut-help-cell--key",
+                                                    span { class: "shortcut-help-key", title: "{item.key}", "{item.key}" }
+                                                }
+                                                td {
+                                                    class: "shortcut-help-cell shortcut-help-cell--action",
+                                                    span { class: "shortcut-help-action", title: "{item.action}", "{item.action}" }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn column_count_breakpoints() {
+        assert_eq!(shortcut_column_count(700), 1);
+        assert_eq!(shortcut_column_count(800), 2);
+        assert_eq!(shortcut_column_count(1200), 3);
+        assert_eq!(shortcut_column_count(1500), 4);
+        assert_eq!(shortcut_column_count(1900), 5);
+    }
+
+    #[test]
+    fn split_shortcuts_into_balanced_columns() {
+        let items = (0..10)
+            .map(|i| ShortcutHelpItem {
+                key: format!("k{i}"),
+                action: format!("a{i}"),
+            })
+            .collect::<Vec<_>>();
+        let columns = split_shortcut_help_columns(items, 1200);
+        assert_eq!(columns.len(), 3);
+        assert_eq!(columns[0].len(), 4);
+        assert_eq!(columns[1].len(), 4);
+        assert_eq!(columns[2].len(), 2);
     }
 }

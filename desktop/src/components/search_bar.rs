@@ -24,6 +24,13 @@ const JS_CLEAR: &str = r#"
     window.Arto.search.clear();
 "#;
 
+/// JavaScript to focus the search input
+const JS_FOCUS: &str = "document.querySelector('.search-input')?.focus()";
+
+/// JavaScript to blur the search input and return focus to the body
+const JS_BLUR_TO_BODY: &str =
+    "document.querySelector('.search-input')?.blur(); document.body.focus();";
+
 /// Navigate to next or previous match
 fn navigate(direction: &'static str) {
     spawn(async move {
@@ -109,7 +116,7 @@ pub fn SearchBar() -> Element {
         }
     });
 
-    // Handle initial text when search bar opens
+    // Handle focus and initial text when search bar opens
     use_effect(use_reactive!(|is_open, initial_text| {
         if is_open {
             if let Some(ref text) = initial_text {
@@ -132,18 +139,30 @@ pub fn SearchBar() -> Element {
                     spawn(async move {
                         let _ = document::eval(&js).await;
                     });
+                } else {
+                    // No text provided, just focus the input
+                    spawn(async move {
+                        let _ = document::eval(JS_FOCUS).await;
+                    });
                 }
                 // Clear the initial text after using it
                 state.search_initial_text.set(None);
+            } else {
+                // No initial text, just focus the input
+                spawn(async move {
+                    let _ = document::eval(JS_FOCUS).await;
+                });
             }
         }
     }));
 
-    // Ensure the input does not keep focus after closing the search bar
+    // Move focus away from search input after closing the search bar.
+    // Without explicit body focus, keyboard shortcuts stop working because
+    // keydown events may not reach the document-level interceptor.
     use_effect(use_reactive!(|is_open| {
         if !is_open {
             spawn(async move {
-                let _ = document::eval("document.querySelector('.search-input')?.blur();").await;
+                let _ = document::eval(JS_BLUR_TO_BODY).await;
             });
         }
     }));
@@ -167,7 +186,7 @@ pub fn SearchBar() -> Element {
                         r#type: "text",
                         class: "search-input",
                         placeholder: "Search...",
-                        autofocus: true,
+                        tabindex: if is_open { 0 } else { -1 },
                         autocorrect: "off",
                         autocapitalize: "off",
                         spellcheck: "false",
@@ -183,7 +202,13 @@ pub fn SearchBar() -> Element {
                                     let direction = if evt.modifiers().shift() { "prev" } else { "next" };
                                     navigate(direction);
                                 }
-                                Key::Escape => state.toggle_search(),
+                                Key::Escape => {
+                                    // Just blur the input; a second Escape (handled by
+                                    // the keybinding engine as Cancel) will close the bar.
+                                    spawn(async move {
+                                        let _ = document::eval(JS_BLUR_TO_BODY).await;
+                                    });
+                                }
                                 _ => {}
                             }
                         },
