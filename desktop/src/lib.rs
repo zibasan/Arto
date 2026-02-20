@@ -1,6 +1,7 @@
 mod assets;
 mod bookmarks;
 mod cache;
+pub mod cli;
 mod components;
 mod config;
 mod drag;
@@ -20,7 +21,6 @@ mod watcher;
 mod window;
 
 use dioxus::desktop::tao::event::{Event, WindowEvent};
-use std::path::PathBuf;
 use tracing_subscriber::filter::EnvFilter;
 use tracing_subscriber::prelude::*;
 
@@ -35,10 +35,10 @@ pub enum RunResult {
     Launched,
 }
 
-pub fn run(paths: Vec<PathBuf>) -> RunResult {
+pub fn run(invocation: cli::CliInvocation) -> RunResult {
     // Try to send paths to existing instance via IPC
     // If successful, exit immediately without initializing anything else
-    if let ipc::SendResult::Sent = ipc::try_send_to_existing_instance(&paths) {
+    if let ipc::SendResult::Sent = ipc::try_send_to_existing_instance(&invocation) {
         return RunResult::SentToExistingInstance;
     }
 
@@ -54,13 +54,10 @@ pub fn run(paths: Vec<PathBuf>) -> RunResult {
     // Start IPC server to accept connections from future instances
     ipc::start_ipc_server();
 
-    // Push CLI paths to IPC event queue (MainApp will pop the first one)
-    for path in paths {
-        let event = match ipc::validate_path(&path) {
-            Some(event) => event,
-            None => continue, // Invalid path, already logged by validate_path
-        };
-        tracing::debug!(?event, "Pushing CLI path to IPC event queue");
+    // Push CLI request to IPC event queue (MainApp will pop and apply it as initial state)
+    if let Some(request) = ipc::build_open_request(&invocation) {
+        let event = ipc::OpenEvent::Open(request);
+        tracing::debug!(?event, "Pushing CLI request to IPC event queue");
         ipc::push_event(event);
     }
 
@@ -78,12 +75,9 @@ pub fn run(paths: Vec<PathBuf>) -> RunResult {
                     for url in urls {
                         match url.to_file_path() {
                             Ok(path) => {
-                                let event = if path.is_dir() {
-                                    ipc::OpenEvent::Directory(path)
-                                } else {
-                                    ipc::OpenEvent::File(path)
-                                };
-                                ipc::push_event(event);
+                                if let Some(event) = ipc::validate_path(path) {
+                                    ipc::push_event(event);
+                                }
                             }
                             Err(_) => {
                                 tracing::info!(
@@ -99,7 +93,7 @@ pub fn run(paths: Vec<PathBuf>) -> RunResult {
                 Event::Reopen { .. } => {
                     // Handle dock click / app activation
                     tracing::debug!("Event::Reopen received (dock click or app activation)");
-                    ipc::push_event(ipc::OpenEvent::Reopen);
+                    ipc::push_event(ipc::OpenEvent::Reopen { behavior: None });
                     ipc::process_main_thread_tasks();
                 }
                 Event::WindowEvent {

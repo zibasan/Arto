@@ -46,14 +46,20 @@ pub fn MainApp() -> Element {
         tracing::debug!("No initial event, will show welcome screen");
     }
 
-    // Resolve initial tab and directory from event
+    // Resolve initial tabs and directory from event
     let is_first_window = true;
-    let (tab, directory_override) = match &first_event {
-        Some(OpenEvent::File(path)) => (Tab::new(path.clone()), None),
-        Some(OpenEvent::Directory(path)) => (Tab::default(), Some(path.clone())),
+    let (tabs, directory_override) = match &first_event {
+        Some(OpenEvent::Open(request)) => {
+            let tabs = if request.files.is_empty() {
+                vec![Tab::default()]
+            } else {
+                request.files.iter().cloned().map(Tab::new).collect()
+            };
+            (tabs, request.directory.clone())
+        }
         _ => {
             let welcome_content = crate::assets::get_default_markdown_content();
-            (Tab::with_inline_content(welcome_content), None)
+            (vec![Tab::with_inline_content(welcome_content)], None)
         }
     };
 
@@ -67,7 +73,10 @@ pub fn MainApp() -> Element {
     // Directory resolution: override (from event) → config → tab parent → home → root
     let directory = directory_override
         .or(directory_pref.directory)
-        .or_else(|| tab.file().and_then(|p| p.parent().map(|p| p.to_path_buf())))
+        .or_else(|| {
+            tabs.iter()
+                .find_map(|tab| tab.file().and_then(|p| p.parent().map(|p| p.to_path_buf())))
+        })
         .or_else(dirs::home_dir)
         .unwrap_or_else(|| PathBuf::from("/"));
 
@@ -76,7 +85,7 @@ pub fn MainApp() -> Element {
     // and GCD wake callback (ipc.rs).
     rsx! {
         crate::components::app::App {
-            tab: tab,
+            tabs: tabs,
             directory: directory,
             theme: theme_pref.theme,
             sidebar_open: sidebar_pref.open,

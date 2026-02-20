@@ -25,9 +25,9 @@
 //! Messages are sent as JSON Lines (one JSON object per line):
 //!
 //! ```json
-//! {"type":"file","path":"/path/to/file.md"}
-//! {"type":"directory","path":"/path/to/dir"}
-//! {"type":"reopen"}
+//! {"type":"open","files":["/path/to/file.md"],"directory":null,"behavior":"last_focused"}
+//! {"type":"open","files":[],"directory":"/path/to/dir","behavior":"new_window"}
+//! {"type":"reopen","behavior":"last_focused"}
 //! ```
 
 mod client;
@@ -44,9 +44,8 @@ pub use server::*;
 pub use socket::cleanup_socket;
 
 use queue::{drain_events, SHUTDOWN_REQUESTED, SHUTDOWN_SIGNAL, SHUTDOWN_STARTED};
-use std::path::PathBuf;
 use std::sync::atomic::Ordering;
-use window_selection::select_target_window;
+use window_selection::{select_target_window, select_target_window_with_behavior};
 
 // ============================================================================
 // GCD wake mechanism — wake main thread from IPC background thread
@@ -155,59 +154,71 @@ fn handle_event_on_main_thread(
     event: OpenEvent,
 ) {
     match event {
-        OpenEvent::File(path) => {
-            tracing::debug!(?path, "Processing file open event");
-            open_file_with_behavior(desktop, path);
+        OpenEvent::Open(request) => {
+            tracing::debug!(?request, "Processing open request event");
+            open_request_with_behavior(desktop, request);
         }
-        OpenEvent::Directory(dir) => {
-            tracing::debug!(?dir, "Processing directory open event");
-            open_directory_with_behavior(desktop, dir);
-        }
-        OpenEvent::Reopen => {
-            tracing::debug!("Processing reopen event");
-            reopen_with_behavior(desktop);
+        OpenEvent::Reopen { behavior } => {
+            tracing::debug!(?behavior, "Processing reopen event");
+            reopen_with_behavior(desktop, behavior);
         }
     }
 }
 
-fn open_file_with_behavior(desktop: &std::rc::Rc<dioxus::desktop::DesktopService>, path: PathBuf) {
-    if let Some(window_id) = select_target_window() {
-        if let Some(mut state) = crate::window::main::get_window_state(window_id) {
-            state.open_file(&path);
-            let _ = crate::window::main::focus_window(window_id);
-            return;
-        }
-    }
-
-    crate::window::create_main_window_sync(
-        desktop,
-        crate::state::Tab::new(path),
-        crate::window::CreateMainWindowConfigParams::default(),
-    );
-}
-
-fn open_directory_with_behavior(
+fn open_request_with_behavior(
     desktop: &std::rc::Rc<dioxus::desktop::DesktopService>,
-    directory: PathBuf,
+    request: OpenRequest,
 ) {
-    if let Some(window_id) = select_target_window() {
+    let behavior = request
+        .behavior
+        .unwrap_or_else(|| crate::config::CONFIG.read().file_open);
+
+    if let Some(window_id) = select_target_window_with_behavior(behavior) {
         if let Some(mut state) = crate::window::main::get_window_state(window_id) {
-            state.set_root_directory(directory.clone());
+            apply_open_request_to_state(&mut state, &request);
             let _ = crate::window::main::focus_window(window_id);
             return;
         }
     }
 
     let params = crate::window::CreateMainWindowConfigParams {
-        directory: Some(directory),
+        directory: request.directory,
         ..Default::default()
     };
-    crate::window::create_main_window_sync(desktop, crate::state::Tab::default(), params);
+
+    let tabs = if request.files.is_empty() {
+        vec![crate::state::Tab::default()]
+    } else {
+        request
+            .files
+            .iter()
+            .cloned()
+            .map(crate::state::Tab::new)
+            .collect()
+    };
+    crate::window::create_main_window_sync_with_tabs(desktop, tabs, params);
 }
 
-fn reopen_with_behavior(desktop: &std::rc::Rc<dioxus::desktop::DesktopService>) {
+fn apply_open_request_to_state(state: &mut crate::state::AppState, request: &OpenRequest) {
+    if let Some(directory) = request.directory.as_ref() {
+        state.set_root_directory(directory.clone());
+    }
+    for path in &request.files {
+        state.open_file(path);
+    }
+}
+
+fn reopen_with_behavior(
+    desktop: &std::rc::Rc<dioxus::desktop::DesktopService>,
+    behavior: Option<crate::config::FileOpenBehavior>,
+) {
+    let target_window = match behavior {
+        Some(behavior) => select_target_window_with_behavior(behavior),
+        None => select_target_window(),
+    };
+
     // First try to focus an existing visible window
-    if let Some(window_id) = select_target_window() {
+    if let Some(window_id) = target_window {
         if crate::window::main::focus_window(window_id) {
             return;
         }
@@ -242,83 +253,100 @@ mod tests {
     use socket::{get_socket_path, is_address_in_use, SOCKET_NAME};
 
     #[test]
-    fn test_ipc_message_file_serialization() {
-        let msg = IpcMessage::File {
-            path: PathBuf::from("/path/to/file.md"),
+    fn test_ipc_message_open_serialization() {
+        let msg = IpcMessage::Open {
+            files: vec![PathBuf::from("/path/to/file.md")],
+            directory: Some(PathBuf::from("/path/to/dir")),
+            behavior: Some(FileOpenBehavior::LastFocused),
         };
         let json = serde_json::to_string(&msg).unwrap();
-        assert_eq!(json, r#"{"type":"file","path":"/path/to/file.md"}"#);
-    }
-
-    #[test]
-    fn test_ipc_message_directory_serialization() {
-        let msg = IpcMessage::Directory {
-            path: PathBuf::from("/path/to/dir"),
-        };
-        let json = serde_json::to_string(&msg).unwrap();
-        assert_eq!(json, r#"{"type":"directory","path":"/path/to/dir"}"#);
+        assert_eq!(
+            json,
+            r#"{"type":"open","files":["/path/to/file.md"],"directory":"/path/to/dir","behavior":"last_focused"}"#
+        );
     }
 
     #[test]
     fn test_ipc_message_reopen_serialization() {
-        let msg = IpcMessage::Reopen;
+        let msg = IpcMessage::Reopen {
+            behavior: Some(FileOpenBehavior::LastFocused),
+        };
         let json = serde_json::to_string(&msg).unwrap();
-        assert_eq!(json, r#"{"type":"reopen"}"#);
+        assert_eq!(json, r#"{"type":"reopen","behavior":"last_focused"}"#);
     }
 
     #[test]
-    fn test_ipc_message_file_deserialization() {
-        let json = r#"{"type":"file","path":"/path/to/file.md"}"#;
+    fn test_ipc_message_open_deserialization() {
+        let json = r#"{"type":"open","files":["/path/to/file.md"],"directory":"/path/to/dir","behavior":"last_focused"}"#;
         let msg: IpcMessage = serde_json::from_str(json).unwrap();
-        assert!(matches!(msg, IpcMessage::File { path } if path == Path::new("/path/to/file.md")));
-    }
-
-    #[test]
-    fn test_ipc_message_directory_deserialization() {
-        let json = r#"{"type":"directory","path":"/path/to/dir"}"#;
-        let msg: IpcMessage = serde_json::from_str(json).unwrap();
-        assert!(matches!(msg, IpcMessage::Directory { path } if path == Path::new("/path/to/dir")));
+        assert!(matches!(
+            msg,
+            IpcMessage::Open {
+                files,
+                directory,
+                behavior: Some(FileOpenBehavior::LastFocused)
+            } if files == vec![PathBuf::from("/path/to/file.md")] && directory == Some(PathBuf::from("/path/to/dir"))
+        ));
     }
 
     #[test]
     fn test_ipc_message_reopen_deserialization() {
+        let json = r#"{"type":"reopen","behavior":"last_focused"}"#;
+        let msg: IpcMessage = serde_json::from_str(json).unwrap();
+        assert!(matches!(
+            msg,
+            IpcMessage::Reopen {
+                behavior: Some(FileOpenBehavior::LastFocused)
+            }
+        ));
+    }
+
+    #[test]
+    fn test_ipc_message_reopen_deserialization_legacy_without_behavior() {
         let json = r#"{"type":"reopen"}"#;
         let msg: IpcMessage = serde_json::from_str(json).unwrap();
-        assert!(matches!(msg, IpcMessage::Reopen));
+        assert!(matches!(msg, IpcMessage::Reopen { behavior: None }));
     }
 
     #[test]
-    fn test_ipc_message_into_open_event_file() {
-        let msg = IpcMessage::File {
-            path: PathBuf::from("/test.md"),
+    fn test_ipc_message_into_open_event_open() {
+        let msg = IpcMessage::Open {
+            files: vec![PathBuf::from("/test.md")],
+            directory: Some(PathBuf::from("/test/dir")),
+            behavior: Some(FileOpenBehavior::CurrentScreen),
         };
         let event = msg.into_open_event();
-        assert!(matches!(event, OpenEvent::File(p) if p == Path::new("/test.md")));
-    }
-
-    #[test]
-    fn test_ipc_message_into_open_event_directory() {
-        let msg = IpcMessage::Directory {
-            path: PathBuf::from("/test/dir"),
-        };
-        let event = msg.into_open_event();
-        assert!(matches!(event, OpenEvent::Directory(p) if p == Path::new("/test/dir")));
+        assert!(matches!(
+            event,
+            OpenEvent::Open(OpenRequest {
+                files,
+                directory: Some(directory),
+                behavior: Some(FileOpenBehavior::CurrentScreen)
+            }) if files == vec![PathBuf::from("/test.md")] && directory == Path::new("/test/dir")
+        ));
     }
 
     #[test]
     fn test_ipc_message_into_open_event_reopen() {
-        let msg = IpcMessage::Reopen;
+        let msg = IpcMessage::Reopen {
+            behavior: Some(FileOpenBehavior::LastFocused),
+        };
         let event = msg.into_open_event();
-        assert!(matches!(event, OpenEvent::Reopen));
+        assert!(matches!(
+            event,
+            OpenEvent::Reopen {
+                behavior: Some(FileOpenBehavior::LastFocused)
+            }
+        ));
     }
 
     #[test]
     fn test_json_lines_protocol() {
         // Test that multiple messages can be parsed from newline-separated JSON
         let input = indoc! {r#"
-            {"type":"file","path":"/file1.md"}
-            {"type":"directory","path":"/dir"}
-            {"type":"reopen"}
+            {"type":"open","files":["/file1.md"],"directory":null,"behavior":"last_focused"}
+            {"type":"open","files":[],"directory":"/dir","behavior":"new_window"}
+            {"type":"reopen","behavior":"current_screen"}
         "#};
 
         let messages: Vec<IpcMessage> = input
@@ -328,13 +356,22 @@ mod tests {
             .collect();
 
         assert_eq!(messages.len(), 3);
-        assert!(
-            matches!(&messages[0], IpcMessage::File { path } if path == Path::new("/file1.md"))
-        );
-        assert!(
-            matches!(&messages[1], IpcMessage::Directory { path } if path == Path::new("/dir"))
-        );
-        assert!(matches!(&messages[2], IpcMessage::Reopen));
+        assert!(matches!(
+            &messages[0],
+            IpcMessage::Open { files, directory: None, behavior: Some(FileOpenBehavior::LastFocused) }
+            if files == &vec![PathBuf::from("/file1.md")]
+        ));
+        assert!(matches!(
+            &messages[1],
+            IpcMessage::Open { files, directory: Some(directory), behavior: Some(FileOpenBehavior::NewWindow) }
+            if files.is_empty() && directory == Path::new("/dir")
+        ));
+        assert!(matches!(
+            &messages[2],
+            IpcMessage::Reopen {
+                behavior: Some(FileOpenBehavior::CurrentScreen)
+            }
+        ));
     }
 
     #[test]
@@ -383,19 +420,38 @@ mod tests {
         // Drain any leftover events from other tests (global static is shared)
         drain_events();
 
-        push_event(OpenEvent::File(PathBuf::from("/first.md")));
-        push_event(OpenEvent::Directory(PathBuf::from("/second")));
-        push_event(OpenEvent::Reopen);
+        push_event(OpenEvent::Open(OpenRequest {
+            files: vec![PathBuf::from("/first.md")],
+            directory: None,
+            behavior: None,
+        }));
+        push_event(OpenEvent::Open(OpenRequest {
+            files: Vec::new(),
+            directory: Some(PathBuf::from("/second")),
+            behavior: None,
+        }));
+        push_event(OpenEvent::Reopen { behavior: None });
 
         // try_pop_first_event returns FIFO order
         let first = try_pop_first_event();
-        assert!(matches!(first, Some(OpenEvent::File(p)) if p == Path::new("/first.md")));
+        assert!(matches!(
+            first,
+            Some(OpenEvent::Open(OpenRequest { files, directory: None, .. }))
+            if files == vec![PathBuf::from("/first.md")]
+        ));
 
         // drain_events returns remaining in FIFO order
         let remaining = drain_events();
         assert_eq!(remaining.len(), 2);
-        assert!(matches!(&remaining[0], OpenEvent::Directory(p) if p == Path::new("/second")));
-        assert!(matches!(&remaining[1], OpenEvent::Reopen));
+        assert!(matches!(
+            &remaining[0],
+            OpenEvent::Open(OpenRequest { files, directory: Some(directory), .. })
+            if files.is_empty() && directory == Path::new("/second")
+        ));
+        assert!(matches!(
+            &remaining[1],
+            OpenEvent::Reopen { behavior: None }
+        ));
 
         // Queue is empty after drain
         assert!(try_pop_first_event().is_none());

@@ -103,11 +103,21 @@ After installation, the `arto` command becomes available in your terminal:
 ```
 arto                     # Launch Arto (shows welcome screen)
 arto README.md           # Open a specific file
+arto --open=screen README.md
+arto --open=new README.md
+arto --directory=. README.md
 arto docs/               # Open a directory in the file explorer
 arto file1.md file2.md   # Open multiple files in tabs
 ```
 
-Arto runs as a **single instance** — if Arto is already running, the command sends paths to the existing process instead of launching a new one. Files and directories open in new windows, while running `arto` without arguments shows the main window if it's hidden.
+Arto runs as a **single instance** — if Arto is already running, the command sends requests to the existing process instead of launching a new one.
+
+- `arto FILE` uses `last_focused` behavior by default (reuse last focused visible window).
+- `--open=screen` opens on/reuses a visible window on the cursor's current screen.
+- `--open=new` always opens in a new window.
+- `--directory=DIR` sets the FileExplorer root directory for that invocation.
+- Positional directory arguments (e.g. `arto docs/`) also set the root directory.
+- Running `arto` without arguments shows/focuses an existing window if hidden, or opens one if none exists.
 
 [Homebrew]: https://brew.sh/
 [homebrew-tap]: https://github.com/arto-app/homebrew-tap

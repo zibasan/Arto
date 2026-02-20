@@ -1,4 +1,5 @@
-use clap::Parser;
+use arto::cli::{CliInvocation, CliOpenMode};
+use clap::{Parser, ValueEnum};
 use std::path::PathBuf;
 
 const VERSION: &str = concat!(
@@ -7,6 +8,14 @@ const VERSION: &str = concat!(
     compile_time::datetime_str!(),
     ")",
 );
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum OpenModeArg {
+    /// Reuse a visible window on the cursor's current screen
+    Screen,
+    /// Always create a new window
+    New,
+}
 
 /// Arto — the Art of Reading Markdown
 #[derive(Parser, Debug)]
@@ -21,10 +30,19 @@ const VERSION: &str = concat!(
     after_long_help = "Examples:\n\
         \x20 arto                     Launch Arto (shows welcome screen)\n\
         \x20 arto README.md           Open a specific file\n\
+        \x20 arto --open=screen README.md\n\
+        \x20 arto --open=new README.md\n\
+        \x20 arto --directory=. README.md\n\
         \x20 arto docs/               Open a directory in the file explorer\n\
         \x20 arto file1.md file2.md   Open multiple files in tabs"
 )]
 struct Cli {
+    /// Open target selection mode (default: reuse last focused visible window)
+    #[arg(long, value_enum)]
+    open: Option<OpenModeArg>,
+    /// Root directory for the file explorer sidebar
+    #[arg(long)]
+    directory: Option<PathBuf>,
     /// Files or directories to open
     #[arg()]
     paths: Vec<PathBuf>,
@@ -63,7 +81,19 @@ fn main() {
     }
 
     let cli = Cli::parse();
-    if let arto::RunResult::SentToExistingInstance = arto::run(cli.paths) {
+    let open_mode = match cli.open {
+        Some(OpenModeArg::Screen) => CliOpenMode::CurrentScreen,
+        Some(OpenModeArg::New) => CliOpenMode::NewWindow,
+        None => CliOpenMode::LastFocused,
+    };
+
+    let invocation = CliInvocation {
+        paths: cli.paths,
+        directory: cli.directory,
+        open_mode,
+    };
+
+    if let arto::RunResult::SentToExistingInstance = arto::run(invocation) {
         std::process::exit(0);
     }
 }

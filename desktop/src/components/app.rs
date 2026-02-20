@@ -44,7 +44,7 @@ const MOUSE_BUTTON_LEFT: u32 = 0;
 
 #[component]
 pub fn App(
-    tab: Tab,           // Initial tab (always provided, preserves history)
+    tabs: Vec<Tab>,     // Initial tabs (at least one tab must be present)
     directory: PathBuf, // Directory (resolved in create_main_window or MainApp)
     theme: Theme,       // The enum: Auto/Light/Dark
     sidebar_open: bool,
@@ -60,9 +60,15 @@ pub fn App(
     // Initialize application state with the provided tab
     let mut state = use_context_provider(|| {
         let mut app_state = AppState::new(theme);
+        let initial_tabs = if tabs.is_empty() {
+            vec![Tab::default()]
+        } else {
+            tabs
+        };
 
-        // Initialize with provided tab (preserves history)
-        app_state.tabs.write()[0] = tab;
+        // Initialize with provided tabs (preserves ordering)
+        app_state.tabs.set(initial_tabs);
+        app_state.active_tab.set(0);
 
         // Apply initial sidebar settings from params (including directory)
         {

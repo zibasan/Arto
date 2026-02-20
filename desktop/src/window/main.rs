@@ -223,9 +223,12 @@ pub fn shutdown_all_windows() -> usize {
 /// Resolve the directory for a new window.
 ///
 /// Priority: params.directory → tab parent → home dir → root
-fn resolve_directory(params_directory: Option<PathBuf>, tab: &Tab) -> PathBuf {
+fn resolve_directory(params_directory: Option<PathBuf>, tabs: &[Tab]) -> PathBuf {
     params_directory
-        .or_else(|| tab.file().and_then(|p| p.parent().map(|p| p.to_path_buf())))
+        .or_else(|| {
+            tabs.iter()
+                .find_map(|tab| tab.file().and_then(|p| p.parent().map(|p| p.to_path_buf())))
+        })
         .or_else(dirs::home_dir)
         .unwrap_or_else(|| PathBuf::from("/"))
 }
@@ -264,16 +267,16 @@ fn compute_shifted_position(params: &CreateMainWindowConfigParams) -> LogicalPos
 
 /// Build VirtualDom and Config for a new main window.
 fn build_window_dom_and_config(
-    tab: Tab,
+    tabs: Vec<Tab>,
     mut params: CreateMainWindowConfigParams,
 ) -> (VirtualDom, Config) {
-    let directory = resolve_directory(params.directory.take(), &tab);
+    let directory = resolve_directory(params.directory.take(), &tabs);
     let shifted_position = compute_shifted_position(&params);
 
     let dom = VirtualDom::new_with_props(
         App,
         AppProps {
-            tab,
+            tabs,
             directory,
             theme: params.theme,
             sidebar_open: params.sidebar_open,
@@ -314,7 +317,21 @@ pub fn create_main_window_sync(
     tab: Tab,
     params: CreateMainWindowConfigParams,
 ) {
-    let (dom, config) = build_window_dom_and_config(tab, params);
+    create_main_window_sync_with_tabs(desktop, vec![tab], params);
+}
+
+/// Create a new main window synchronously with multiple initial tabs.
+///
+/// The window is created by the Tao event loop on the next iteration.
+/// The App component self-registers via `register_main_window()`.
+///
+/// IMPORTANT: Must be called on the main thread (event loop thread).
+pub fn create_main_window_sync_with_tabs(
+    desktop: &Rc<DesktopService>,
+    tabs: Vec<Tab>,
+    params: CreateMainWindowConfigParams,
+) {
+    let (dom, config) = build_window_dom_and_config(tabs, params);
 
     // Fire-and-forget: PendingDesktopContext is dropped, but window still gets created.
     // new_window() synchronously pushes PendingWebview and sends NewWindow event.
@@ -340,7 +357,7 @@ pub(crate) async fn create_main_window(
     tab: Tab,
     params: CreateMainWindowConfigParams,
 ) -> Rc<DesktopService> {
-    let (dom, config) = build_window_dom_and_config(tab, params);
+    let (dom, config) = build_window_dom_and_config(vec![tab], params);
 
     let pending = window().new_window(dom, config);
     let handle = pending.await;

@@ -54,6 +54,12 @@ pub(super) fn choose_open_target<T: Copy + Eq>(
 
 pub(super) fn select_target_window() -> Option<WindowId> {
     let behavior = crate::config::CONFIG.read().file_open;
+    select_target_window_with_behavior(behavior)
+}
+
+pub(super) fn select_target_window_with_behavior(
+    behavior: crate::config::FileOpenBehavior,
+) -> Option<WindowId> {
     let cursor_display_bounds = crate::utils::screen::get_current_display_bounds();
     let visible_windows: Vec<WindowSelectionInput<WindowId>> =
         collect_visible_window_selection_inputs(cursor_display_bounds);

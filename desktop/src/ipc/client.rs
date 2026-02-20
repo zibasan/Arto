@@ -1,19 +1,19 @@
-use super::protocol::{IpcMessage, SendResult};
+use super::protocol::{build_open_request, IpcMessage, SendResult};
 use super::socket;
 use interprocess::local_socket::{prelude::*, GenericFilePath, Stream, ToFsName};
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::mpsc;
 use std::time::Duration;
 
-/// Try to send paths to an existing Arto instance.
+/// Try to send a CLI invocation to an existing Arto instance.
 ///
-/// If an existing instance is found, sends all paths and returns `SendResult::Sent`.
+/// If an existing instance is found, sends invocation data and returns `SendResult::Sent`.
 /// If no existing instance is found, returns `SendResult::NoExistingInstance`.
 ///
 /// # Arguments
-/// * `paths` - Paths to send to the existing instance
-pub fn try_send_to_existing_instance(paths: &[PathBuf]) -> SendResult {
+/// * `invocation` - CLI invocation data to send to the existing instance
+pub fn try_send_to_existing_instance(invocation: &crate::cli::CliInvocation) -> SendResult {
     let socket_path = socket::get_socket_path();
 
     // Try to connect to existing instance with timeout
@@ -26,7 +26,7 @@ pub fn try_send_to_existing_instance(paths: &[PathBuf]) -> SendResult {
     };
 
     // Send messages and check for errors (handles primary crash during send)
-    match send_messages_to_primary(stream, paths) {
+    match send_messages_to_primary(stream, invocation) {
         Ok(()) => SendResult::Sent,
         Err(e) => {
             tracing::warn!(?e, "Failed to send messages to primary instance");
@@ -37,29 +37,25 @@ pub fn try_send_to_existing_instance(paths: &[PathBuf]) -> SendResult {
 }
 
 /// Send messages to the primary instance, returning error if communication fails.
-fn send_messages_to_primary(mut stream: Stream, paths: &[PathBuf]) -> std::io::Result<()> {
+fn send_messages_to_primary(
+    mut stream: Stream,
+    invocation: &crate::cli::CliInvocation,
+) -> std::io::Result<()> {
     // Set write timeout to avoid hanging if primary is stuck
     socket::set_socket_timeout(&stream, socket::IPC_TIMEOUT);
 
-    // Build messages to send
-    let mut messages: Vec<IpcMessage> = if paths.is_empty() {
-        vec![IpcMessage::Reopen]
+    let message = if let Some(request) = build_open_request(invocation) {
+        IpcMessage::from_open_request(request)
     } else {
-        paths.iter().filter_map(IpcMessage::from_path).collect()
+        IpcMessage::Reopen {
+            behavior: Some(invocation.open_mode.to_file_open_behavior()),
+        }
     };
 
-    // If all paths were invalid (filtered out), send Reopen to activate the app
-    if messages.is_empty() && !paths.is_empty() {
-        tracing::debug!("All provided paths were invalid, sending Reopen instead");
-        messages.push(IpcMessage::Reopen);
-    }
-
-    // Send messages as JSON Lines, checking each write
-    for message in messages {
-        let json = serde_json::to_string(&message)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        writeln!(stream, "{json}")?;
-    }
+    // Send one message as JSON Line, checking write
+    let json = serde_json::to_string(&message)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    writeln!(stream, "{json}")?;
 
     // Flush and verify - this will fail if primary crashed
     stream.flush()?;
