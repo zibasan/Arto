@@ -82,6 +82,7 @@ pub enum Action {
     FileOpen,
     FileOpenDirectory,
     FileSetParentAsRoot,
+    FileToggleBookmark,
     FileOpenLink,
     FileOpenLinkInNewTab,
     FileSaveImageAs,
@@ -118,6 +119,7 @@ pub enum Action {
     ContentPrev,
     ContentNextHeading,
     ContentPrevHeading,
+    ContentOpenViewer,
 
     // Directory — sidebar navigation (3) — keyboard-only
     DirectoryParent,
@@ -219,6 +221,7 @@ pub(crate) const ACTION_GROUPS: &[(&str, &[Action])] = &[
             Action::FileOpen,
             Action::FileOpenDirectory,
             Action::FileSetParentAsRoot,
+            Action::FileToggleBookmark,
             Action::FileOpenLink,
             Action::FileOpenLinkInNewTab,
             Action::FileSaveImageAs,
@@ -268,6 +271,7 @@ pub(crate) const ACTION_GROUPS: &[(&str, &[Action])] = &[
             Action::ContentPrev,
             Action::ContentNextHeading,
             Action::ContentPrevHeading,
+            Action::ContentOpenViewer,
         ],
     ),
     (
@@ -375,6 +379,7 @@ action_strings! {
     FileOpen => "file.open",
     FileOpenDirectory => "file.open_directory",
     FileSetParentAsRoot => "file.set_parent_as_root",
+    FileToggleBookmark => "file.toggle_bookmark",
     FileOpenLink => "file.open_link",
     FileOpenLinkInNewTab => "file.open_link_in_new_tab",
     FileSaveImageAs => "file.save_image_as",
@@ -399,6 +404,7 @@ action_strings! {
     ContentPrev => "content.prev",
     ContentNextHeading => "content.next_heading",
     ContentPrevHeading => "content.prev_heading",
+    ContentOpenViewer => "content.open_viewer",
     DirectoryParent => "directory.parent",
     DirectoryBack => "directory.back",
     DirectoryForward => "directory.forward",
@@ -419,7 +425,7 @@ mod tests {
 
     #[test]
     fn all_actions_count() {
-        assert_eq!(all_actions().len(), 82);
+        assert_eq!(all_actions().len(), 84);
     }
 
     #[test]
@@ -450,6 +456,21 @@ mod tests {
             "clipboard.copy_code".parse::<Action>().unwrap(),
             Action::CopyCode
         );
+        assert_eq!(
+            "file.toggle_bookmark".parse::<Action>().unwrap(),
+            Action::FileToggleBookmark
+        );
+        assert_eq!(
+            "content.open_viewer".parse::<Action>().unwrap(),
+            Action::ContentOpenViewer
+        );
+    }
+
+    #[test]
+    fn action_groups_include_new_actions() {
+        let actions = all_actions();
+        assert!(actions.contains(&Action::FileToggleBookmark));
+        assert!(actions.contains(&Action::ContentOpenViewer));
     }
 
     #[test]

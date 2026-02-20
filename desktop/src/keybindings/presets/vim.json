@@ -292,9 +292,17 @@
     {
       "key": "Escape",
       "action": "cancel"
+    },
+    {
+      "key": "m m",
+      "action": "file.toggle_bookmark"
     }
   ],
   "content": [
+    {
+      "key": "Enter",
+      "action": "content.open_viewer"
+    },
     {
       "key": "Ctrl+j",
       "action": "content.next"

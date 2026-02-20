@@ -122,7 +122,7 @@
       "action": "focus.quick_access"
     },
     {
-      "key": "Ctrl+x r",
+      "key": "Ctrl+x 4 r",
       "action": "window.toggle_right_sidebar"
     },
     {
@@ -176,9 +176,17 @@
     {
       "key": "Escape",
       "action": "cancel"
+    },
+    {
+      "key": "Ctrl+x r m",
+      "action": "file.toggle_bookmark"
     }
   ],
   "content": [
+    {
+      "key": "Enter",
+      "action": "content.open_viewer"
+    },
     {
       "key": "Ctrl+j",
       "action": "content.next"

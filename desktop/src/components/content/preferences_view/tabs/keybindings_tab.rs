@@ -250,9 +250,11 @@ fn BindingSection(
                             for (real_idx, ka) in display_items.iter() {
                                 if *editing_index.read() == Some(*real_idx) {
                                     tr {
+                                        key: "edit-{real_idx}",
                                         td {
                                             colspan: "2",
                                             BindingForm {
+                                                key: "edit-form-{real_idx}-{ka.key}-{ka.action}",
                                                 context,
                                                 edit_index: Some(*real_idx),
                                                 initial_key: Some(ka.key.clone()),
@@ -268,6 +270,7 @@ fn BindingSection(
                                         let idx = *real_idx;
                                         rsx! {
                                             tr {
+                                                key: "row-{real_idx}",
                                                 class: "binding-row",
                                                 onclick: move |_| editing_index.set(Some(idx)),
                                                 td {
@@ -513,6 +516,7 @@ fn BindingForm(
     } else {
         key_valid && action_valid
     };
+    let selected_action_value = selected_action.read().clone();
 
     rsx! {
         div {
@@ -599,16 +603,29 @@ fn BindingForm(
                 // Action dropdown (grouped by category)
                 select {
                     class: "action-select",
-                    value: "{selected_action}",
+                    value: "{selected_action_value}",
                     onchange: move |evt: FormEvent| selected_action.set(evt.value()),
-                    option { value: "", disabled: true, "Select action..." }
+                    option {
+                        value: "",
+                        disabled: true,
+                        selected: selected_action_value.is_empty(),
+                        "Select action..."
+                    }
                     for (group_label, actions) in ACTION_GROUPS {
                         optgroup {
                             label: *group_label,
                             for action in *actions {
+                                {
+                                    let action_value = action.to_string();
+                                    let is_selected = selected_action_value == action_value;
+                                    rsx! {
                                 option {
-                                    value: "{action}",
-                                    "{action_label(&action.to_string())}"
+                                            key: "{action_value}",
+                                            value: "{action_value}",
+                                            selected: is_selected,
+                                            "{action_label(&action_value)}"
+                                        }
+                                    }
                                 }
                             }
                         }

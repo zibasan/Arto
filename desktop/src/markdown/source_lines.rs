@@ -3,8 +3,17 @@ use std::ops::Range;
 
 /// Convert a byte offset in text to a 1-based line number
 pub(super) fn byte_offset_to_line(text: &str, offset: usize) -> usize {
-    let clamped = offset.min(text.len());
+    let clamped = clamp_to_char_boundary(text, offset);
     text[..clamped].bytes().filter(|&b| b == b'\n').count() + 1
+}
+
+/// Clamp byte offset to a valid UTF-8 char boundary at or before the offset.
+fn clamp_to_char_boundary(text: &str, offset: usize) -> usize {
+    let mut clamped = offset.min(text.len());
+    while clamped > 0 && !text.is_char_boundary(clamped) {
+        clamped -= 1;
+    }
+    clamped
 }
 
 /// Core implementation: replace block-level Start events with Html events that include
@@ -258,6 +267,13 @@ mod tests {
         assert_eq!(byte_offset_to_line("a\nb\nc\n", 4), 3);
         // Offset beyond text length is clamped
         assert_eq!(byte_offset_to_line("hi", 100), 1);
+    }
+
+    #[test]
+    fn test_byte_offset_to_line_mid_char_boundary_is_safe() {
+        let text = "a\n盤\nc";
+        let mid_char = 3; // inside '盤' (bytes are 2..5)
+        assert_eq!(byte_offset_to_line(text, mid_char), 2);
     }
 
     // Helper: render markdown through inject_source_lines_impl with identity line mapping
