@@ -4,6 +4,7 @@ mod behavior;
 mod directory_config;
 mod file_open_behavior;
 mod keybindings_config;
+mod markdown_config;
 mod right_sidebar_config;
 mod sidebar_config;
 mod theme_config;
@@ -16,6 +17,7 @@ pub use behavior::{NewWindowBehavior, StartupBehavior};
 pub use directory_config::DirectoryConfig;
 pub use file_open_behavior::FileOpenBehavior;
 pub use keybindings_config::{BindingSet, KeyAction};
+pub use markdown_config::MarkdownConfig;
 pub use right_sidebar_config::{RightSidebarConfig, DEFAULT_RIGHT_SIDEBAR_WIDTH};
 pub use sidebar_config::{normalize_zoom_level, SidebarConfig};
 pub use theme_config::ThemeConfig;
@@ -32,6 +34,7 @@ pub use zoom_config::ZoomConfig;
 pub struct Config {
     pub directory: DirectoryConfig,
     pub file_open: FileOpenBehavior,
+    pub markdown: MarkdownConfig,
     pub theme: ThemeConfig,
     pub sidebar: SidebarConfig,
     pub right_sidebar: RightSidebarConfig,
@@ -72,6 +75,9 @@ mod tests {
         assert_eq!(config.directory.default_directory, None);
         assert_eq!(config.directory.on_startup, StartupBehavior::Default);
         assert_eq!(config.directory.on_new_window, NewWindowBehavior::Default);
+
+        // Markdown defaults
+        assert!(config.markdown.auto_link_urls); // Default is true
 
         // Sidebar defaults
         assert!(!config.sidebar.default_open); // Default is false
@@ -146,6 +152,9 @@ mod tests {
                 on_new_window: NewWindowBehavior::LastFocused,
             },
             file_open: FileOpenBehavior::CurrentScreen,
+            markdown: MarkdownConfig {
+                auto_link_urls: true,
+            },
             directory: DirectoryConfig {
                 default_directory: Some(PathBuf::from("/home/user")),
                 on_startup: StartupBehavior::Default,
@@ -258,6 +267,9 @@ mod tests {
         assert_eq!(parsed.zoom.default_zoom_level, 1.0);
         assert_eq!(parsed.zoom.on_startup, StartupBehavior::Default);
         assert_eq!(parsed.zoom.on_new_window, NewWindowBehavior::Default);
+
+        // Markdown defaults (auto_link_urls defaults to true even when section is missing)
+        assert!(parsed.markdown.auto_link_urls);
 
         // Sidebar zoom defaults
         assert_eq!(parsed.sidebar.default_zoom_level, 1.0);

@@ -37,15 +37,19 @@ fn generate_slug(text: &str) -> String {
 }
 
 /// Extract headings from markdown content
-pub(super) fn extract_headings(markdown: &str) -> Vec<HeadingInfo> {
+pub(super) fn extract_headings(markdown: &str, auto_link_urls: bool) -> Vec<HeadingInfo> {
     let options = Options::all();
 
     // Reuse the renderer's frontmatter detection to stay in sync:
     // invalid YAML frontmatter is NOT stripped (same as render pipeline).
     let (_, content, _) = extract_and_render_frontmatter(markdown);
 
-    // Convert bare URLs to <URL> autolinks (consistent with render pipeline)
-    let content = super::autolinks::preprocess_autolinks(&content);
+    // Convert bare URLs to <URL> autolinks (consistent with render pipeline, if enabled)
+    let content = if auto_link_urls {
+        super::autolinks::preprocess_autolinks(&content)
+    } else {
+        content
+    };
 
     // Process GitHub alerts (they contain their own parsing)
     // frontmatter_lines=0 since extract_headings doesn't need source line tracking
@@ -147,7 +151,7 @@ mod tests {
             ## Section 2
         "};
 
-        let headings = extract_headings(markdown);
+        let headings = extract_headings(markdown, true);
 
         assert_eq!(headings.len(), 4);
         assert_eq!(
@@ -200,7 +204,7 @@ mod tests {
             ## Overview
         "};
 
-        let headings = extract_headings(markdown);
+        let headings = extract_headings(markdown, true);
 
         assert_eq!(headings.len(), 4);
         assert_eq!(headings[0].id, "introduction");
@@ -221,7 +225,7 @@ mod tests {
             Content
         "};
 
-        let headings = extract_headings(markdown);
+        let headings = extract_headings(markdown, true);
 
         assert_eq!(headings.len(), 1);
         assert_eq!(headings[0].text, "Heading After Frontmatter");
@@ -238,7 +242,7 @@ mod tests {
             # Heading After Invalid Frontmatter
         "};
 
-        let headings = extract_headings(markdown);
+        let headings = extract_headings(markdown, true);
 
         // The renderer treats invalid YAML as regular content, so heading extraction
         // must do the same to keep heading IDs in sync.
