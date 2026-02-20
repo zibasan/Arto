@@ -11,6 +11,7 @@ Thank you for your interest in contributing to Arto!
 ```bash
 git clone https://github.com/arto-app/Arto.git
 cd Arto
+cachix use arto   # Enable binary cache (speeds up builds)
 nix develop
 ```
 

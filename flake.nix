@@ -1,6 +1,11 @@
 {
   description = "Arto - the Art of Reading Markdown";
 
+  nixConfig = {
+    extra-substituters = [ "https://arto.cachix.org" ];
+    extra-trusted-public-keys = [ "arto.cachix.org-1:yaH0JQomRJTosIcTh2xZPKBEny41D7h6QUePYQzWYqc=" ];
+  };
+
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     crane.url = "github:ipetkov/crane";
