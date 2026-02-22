@@ -15,20 +15,24 @@ pub fn BookmarkButton(
     #[props(default = 14)]
     size: u32,
 ) -> Element {
-    let path_for_check = path.clone();
-    let mut is_bookmarked = use_signal(move || BOOKMARKS.read().contains(&path_for_check));
-
-    // Subscribe to bookmark changes from other windows/components
-    let path_for_subscription = path.clone();
-    use_future(move || {
-        let path = path_for_subscription.clone();
-        async move {
-            let mut rx = BOOKMARKS_CHANGED.subscribe();
-            while rx.recv().await.is_ok() {
-                is_bookmarked.set(BOOKMARKS.read().contains(&path));
-            }
+    // Re-render trigger for bookmark changes from other windows/components.
+    // When BOOKMARKS_CHANGED fires, toggling this signal causes a re-render,
+    // which re-evaluates `is_bookmarked` below with the current `path` prop.
+    let mut bookmark_dirty = use_signal(|| false);
+    use_future(move || async move {
+        let mut rx = BOOKMARKS_CHANGED.subscribe();
+        while rx.recv().await.is_ok() {
+            bookmark_dirty.set(!bookmark_dirty());
         }
     });
+
+    // Compute bookmark status from current path prop and current bookmarks.
+    // This is re-evaluated when:
+    // - `path` prop changes (component re-renders due to prop change)
+    // - `bookmark_dirty` signal changes (bookmarks modified elsewhere)
+    // Reading the signal here subscribes this component to its changes.
+    let _ = *bookmark_dirty.read();
+    let is_bookmarked = BOOKMARKS.read().contains(&path);
 
     let handle_click = {
         let path = path.clone();
@@ -38,23 +42,19 @@ pub fn BookmarkButton(
         }
     };
 
-    let icon_name = if *is_bookmarked.read() {
+    let icon_name = if is_bookmarked {
         IconName::StarFilled
     } else {
         IconName::Star
     };
 
-    let title = if *is_bookmarked.read() {
+    let title = if is_bookmarked {
         "Remove from Quick Access"
     } else {
         "Add to Quick Access"
     };
 
-    let bookmarked_class = if *is_bookmarked.read() {
-        "bookmarked"
-    } else {
-        ""
-    };
+    let bookmarked_class = if is_bookmarked { "bookmarked" } else { "" };
 
     rsx! {
         button {
