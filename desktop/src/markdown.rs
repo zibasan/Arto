@@ -1,4 +1,5 @@
 mod alerts;
+mod autolinks;
 mod event_processors;
 mod frontmatter;
 mod headings;
@@ -7,6 +8,7 @@ mod source_lines;
 
 pub use headings::*;
 
+use crate::config::CONFIG;
 use alerts::process_github_alerts;
 use anyhow::Result;
 use event_processors::{extend_table_ranges, process_code_blocks, process_math_expressions};
@@ -32,7 +34,7 @@ struct PipelineResult {
 /// Run the common markdown parsing pipeline: frontmatter extraction,
 /// GitHub alert preprocessing, pulldown-cmark parsing, source line
 /// injection, and HTML generation.
-fn run_pipeline(markdown: &str, base_path: &Path) -> PipelineResult {
+fn run_pipeline(markdown: &str, base_path: &Path, auto_link_urls: bool) -> PipelineResult {
     let base_dir = base_path
         .parent()
         .map(|p| p.to_path_buf())
@@ -40,6 +42,13 @@ fn run_pipeline(markdown: &str, base_path: &Path) -> PipelineResult {
 
     // Extract frontmatter if present
     let (frontmatter_html, content, frontmatter_lines) = extract_and_render_frontmatter(markdown);
+
+    // Convert bare URLs to <URL> autolinks before any parsing (if enabled)
+    let content = if auto_link_urls {
+        autolinks::preprocess_autolinks(&content)
+    } else {
+        content
+    };
 
     // Process GitHub alerts (returns line origin mapping for correct source line tracking)
     let (processed_markdown, line_origins) = process_github_alerts(&content, frontmatter_lines);
@@ -91,7 +100,8 @@ fn prepend_frontmatter(frontmatter_html: &str, html_output: String) -> String {
 
 /// Render Markdown to HTML
 pub fn render_to_html(markdown: impl AsRef<str>, base_path: impl AsRef<Path>) -> Result<String> {
-    let pipeline = run_pipeline(markdown.as_ref(), base_path.as_ref());
+    let auto_link_urls = CONFIG.read().markdown.auto_link_urls;
+    let pipeline = run_pipeline(markdown.as_ref(), base_path.as_ref(), auto_link_urls);
 
     let html_output = post_process_html_tags(
         &pipeline.raw_html,
@@ -110,8 +120,9 @@ pub fn render_to_html_with_toc(
     base_path: impl AsRef<Path>,
 ) -> Result<(String, Vec<HeadingInfo>)> {
     let markdown = markdown.as_ref();
-    let headings = extract_headings(markdown);
-    let pipeline = run_pipeline(markdown, base_path.as_ref());
+    let auto_link_urls = CONFIG.read().markdown.auto_link_urls;
+    let headings = extract_headings(markdown, auto_link_urls);
+    let pipeline = run_pipeline(markdown, base_path.as_ref(), auto_link_urls);
 
     let html_output = post_process_html_with_headings(
         &pipeline.raw_html,
@@ -868,6 +879,96 @@ mod tests {
         assert!(
             result.contains(r#"data-source-line-end="7""#),
             "Second table should end on line 7: {result}"
+        );
+    }
+
+    // ========================================================================
+    // Autolink integration tests
+    // ========================================================================
+
+    /// Render markdown through the full pipeline with an explicit auto_link_urls setting.
+    /// This avoids depending on the global CONFIG, preventing test interference.
+    fn render_with_autolink(markdown: &str, base_path: &Path, auto_link_urls: bool) -> String {
+        let pipeline = run_pipeline(markdown, base_path, auto_link_urls);
+        let html_output = post_process_html_tags(
+            &pipeline.raw_html,
+            &pipeline.base_dir,
+            &pipeline.table_source_lines,
+        );
+        prepend_frontmatter(&pipeline.frontmatter_html, html_output)
+    }
+
+    #[test]
+    fn test_bare_url_becomes_link() {
+        let markdown = "Visit https://example.com for info";
+        let temp_dir = TempDir::new().unwrap();
+        let md_path = temp_dir.path().join("test.md");
+        let result = render_with_autolink(markdown, &md_path, true);
+
+        assert!(
+            result.contains(r#"<a href="https://example.com">https://example.com</a>"#),
+            "Bare URL should become a link: {result}"
+        );
+    }
+
+    #[test]
+    fn test_bare_url_not_linked_when_disabled() {
+        let markdown = "Visit https://example.com for info";
+        let temp_dir = TempDir::new().unwrap();
+        let md_path = temp_dir.path().join("test.md");
+        let result = render_with_autolink(markdown, &md_path, false);
+
+        assert!(
+            !result.contains(r#"<a href"#),
+            "Bare URL should NOT become a link when disabled: {result}"
+        );
+        assert!(
+            result.contains("https://example.com"),
+            "URL text should still be present: {result}"
+        );
+    }
+
+    #[test]
+    fn test_bare_url_in_code_block_not_linked() {
+        let markdown = indoc! {"
+            ```
+            https://example.com
+            ```
+        "};
+        let temp_dir = TempDir::new().unwrap();
+        let md_path = temp_dir.path().join("test.md");
+        let result = render_with_autolink(markdown, &md_path, true);
+
+        assert!(
+            !result.contains(r#"<a href"#),
+            "URL inside code block should NOT become a link: {result}"
+        );
+    }
+
+    #[test]
+    fn test_bare_url_source_lines_preserved() {
+        let markdown = indoc! {"
+            # Title
+
+            https://example.com
+
+            After URL
+        "};
+        let temp_dir = TempDir::new().unwrap();
+        let md_path = temp_dir.path().join("test.md");
+        let result = render_with_autolink(markdown, &md_path, true);
+
+        assert!(
+            result.contains(r#"<h1 data-source-line="1">"#),
+            "Heading should be on line 1: {result}"
+        );
+        assert!(
+            result.contains(r#"<p data-source-line="3">"#),
+            "URL paragraph should be on line 3: {result}"
+        );
+        assert!(
+            result.contains(r#"<p data-source-line="5">"#),
+            "After paragraph should be on line 5: {result}"
         );
     }
 
