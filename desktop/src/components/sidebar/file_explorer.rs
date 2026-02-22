@@ -206,12 +206,12 @@ fn DirectoryNavigation(current_dir: PathBuf, mut refresh_counter: Signal<u32>) -
                             "{dir_name}"
                         }
 
-                        // Action buttons (bookmark, copy & reload) - shown on hover
+                        // Bookmark button - outside actions div for independent visibility
+                        BookmarkButton { path: current_dir.clone() }
+
+                        // Action buttons (copy & reload) - shown on hover
                         div {
                             class: "left-sidebar-header-actions",
-
-                            // Bookmark button
-                            BookmarkButton { path: current_dir.clone() }
 
                             // Copy path button
                             button {
@@ -267,12 +267,12 @@ fn DirectoryNavigation(current_dir: PathBuf, mut refresh_counter: Signal<u32>) -
                             "/"
                         }
 
-                        // Action buttons (bookmark, copy & reload) - shown on hover
+                        // Bookmark button - outside actions div for independent visibility
+                        BookmarkButton { path: current_dir.clone() }
+
+                        // Action buttons (copy & reload) - shown on hover
                         div {
                             class: "left-sidebar-header-actions",
-
-                            // Bookmark button
-                            BookmarkButton { path: current_dir.clone() }
 
                             // Copy path button
                             button {

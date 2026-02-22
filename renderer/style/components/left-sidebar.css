@@ -452,18 +452,26 @@
 
 .left-sidebar-tree-node-content .bookmark-button.bookmarked {
   opacity: var(--opacity-hover);
+  color: var(--accent-bg);
 }
 
-/* Sidebar header bookmark button */
-.left-sidebar-header-actions .bookmark-button {
-  opacity: var(--opacity-muted);
+/* Sidebar header bookmark button - independent of actions container */
+.left-sidebar-header-content > .bookmark-button {
+  padding: 2px 4px;
+  width: auto;
+  height: auto;
+  opacity: 0;
 }
 
-.left-sidebar-header-actions .bookmark-button:hover {
-  opacity: 1;
+.left-sidebar-header-content:hover > .bookmark-button {
+  opacity: var(--opacity-secondary);
 }
 
-.left-sidebar-header-actions .bookmark-button.bookmarked {
+.left-sidebar-header-content > .bookmark-button:hover {
+  opacity: 1 !important;
+}
+
+.left-sidebar-header-content > .bookmark-button.bookmarked {
   opacity: var(--opacity-hover);
   color: var(--accent-bg);
 }
