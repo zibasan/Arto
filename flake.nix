@@ -20,7 +20,9 @@
     let
       systems = [
         "aarch64-darwin"
+        "aarch64-linux"
         "x86_64-darwin"
+        "x86_64-linux"
       ];
       eachSystem = nixpkgs.lib.genAttrs systems;
     in
@@ -46,11 +48,18 @@
 
           # Platform detection
           isDarwin = pkgs.stdenv.hostPlatform.isDarwin;
+          isLinux = pkgs.stdenv.hostPlatform.isLinux;
 
           # App bundle paths (used in build and apps)
           appBundleName = "Arto.app";
           appExecutableName = "arto"; # lowercase executable name
-          dxBundlePath = "target/dx/${packageMeta.pname}/bundle/macos/bundle/macos";
+          dxBundlePath =
+            if isDarwin then
+              "target/dx/${packageMeta.pname}/bundle/macos/bundle/macos"
+            # dx build (not bundle) outputs here; bundle fails in Nix sandbox
+            # due to permission errors in the .deb/.AppImage packagers.
+            else
+              "target/dx/${packageMeta.pname}/release/linux/app";
 
           renderer-assets = pkgs.stdenvNoCC.mkDerivation (finalAttrs: {
             pname = "${packageMeta.pname}-renderer-assets";
@@ -104,9 +113,21 @@
             strictDeps = true;
             # Pass version to build.rs via environment variable
             ARTO_BUILD_VERSION = artoVersion;
-            buildInputs = lib.optionals isDarwin [
-              pkgs.libiconv
+            nativeBuildInputs = lib.optionals isLinux [
+              pkgs.pkg-config
             ];
+            buildInputs =
+              lib.optionals isDarwin [
+                pkgs.libiconv
+              ]
+              ++ lib.optionals isLinux [
+                pkgs.webkitgtk_4_1
+                pkgs.gtk3
+                pkgs.libsoup_3
+                pkgs.glib
+                pkgs.openssl
+                pkgs.xdotool
+              ];
           };
 
           cargoArtifacts = craneLib.buildDepsOnly commonArgs;
@@ -145,6 +166,10 @@
                 ]
                 ++ lib.optionals isDarwin [
                   pkgs.darwin.autoSignDarwinBinariesHook
+                ]
+                ++ lib.optionals isLinux [
+                  pkgs.pkg-config
+                  pkgs.wrapGAppsHook3
                 ];
 
               postPatch = ''
@@ -160,12 +185,19 @@
               # Use buildPhaseCargoCommand instead of cargoBuildCommand because crane's
               # additional build argument `--message-format` cannot be passed to dioxus-cli properly.
               # https://crane.dev/API.html#cranelibbuildpackage
-              buildPhaseCargoCommand = ''
-                dx bundle --release --platform desktop --package-types macos
-              '';
+              buildPhaseCargoCommand =
+                if isDarwin then
+                  ''
+                    dx bundle --release --platform desktop --package-types macos
+                  ''
+                else
+                  ''
+                    dx build --release --platform desktop
+                  '';
 
-              # The build output is a macOS .app bundle, and crane cannot infer the install
-              # destination, so we manually install without capturing cargoBuildLog in buildPhase.
+              # The build output is a platform-specific bundle, and crane cannot infer the
+              # install destination, so we manually install without capturing cargoBuildLog
+              # in buildPhase.
               # https://crane.dev/API.html#cranelibinstallfromcargobuildloghook
               doNotPostBuildInstallCargoBinaries = true;
 
@@ -186,6 +218,24 @@
                 # Create symlink for CLI usage (enables `arto` command in PATH)
                 mkdir -p $out/bin
                 ln -s "$out/Applications/${appBundleName}/Contents/MacOS/${appExecutableName}" "$out/bin/${appExecutableName}"
+              ''
+              + lib.optionalString isLinux ''
+                app_dir="${dxBundlePath}"
+
+                if [[ ! -d "$app_dir" ]]; then
+                  echo "Error: Expected build output not found at $app_dir"
+                  echo "Searching for build output in target/dx..."
+                  find target/dx -type d 2>/dev/null || true
+                  exit 1
+                fi
+
+                # Install the entire app directory (binary + assets) since
+                # Dioxus asset!() macro resolves paths relative to the binary.
+                mkdir -p $out/lib/${appExecutableName}
+                cp -r "$app_dir"/. $out/lib/${appExecutableName}/
+
+                mkdir -p $out/bin
+                ln -s $out/lib/${appExecutableName}/${appExecutableName} $out/bin/${appExecutableName}
               '';
             }
           );
@@ -201,13 +251,18 @@
         let
           # Access packageMeta from packages let-binding
           inherit (self.packages.${system}) arto;
+          pkgs = nixpkgs.legacyPackages.${system};
           appBundleName = "Arto.app";
           appExecutableName = "arto";
         in
         {
           default = {
             type = "app";
-            program = "${arto}/Applications/${appBundleName}/Contents/MacOS/${appExecutableName}";
+            program =
+              if pkgs.stdenv.hostPlatform.isDarwin then
+                "${arto}/Applications/${appBundleName}/Contents/MacOS/${appExecutableName}"
+              else
+                "${arto}/bin/${appExecutableName}";
           };
         }
       );
@@ -237,6 +292,15 @@
             ]
             ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isDarwin [
               pkgs.libiconv
+            ]
+            ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [
+              pkgs.pkg-config
+              pkgs.webkitgtk_4_1
+              pkgs.gtk3
+              pkgs.libsoup_3
+              pkgs.glib
+              pkgs.openssl
+              pkgs.xdotool
             ];
 
             # Workaround: Nix sets DEVELOPER_DIR to its apple-sdk, which breaks `just build` dmg creation.

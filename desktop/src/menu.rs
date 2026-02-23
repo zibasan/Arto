@@ -152,6 +152,7 @@ fn menu_action_for_id(id: MenuId) -> Option<&'static str> {
 
 /// Build the application menu bar
 pub fn build_menu() -> Menu {
+    #[cfg(target_os = "macos")]
     disable_automatic_window_tabbing();
 
     let menu = Menu::new();
@@ -511,6 +512,7 @@ fn pick_directory() -> Option<PathBuf> {
     dir
 }
 
+#[cfg(target_os = "macos")]
 fn disable_automatic_window_tabbing() {
     use objc2::MainThreadMarker;
     use objc2_app_kit::NSWindow;

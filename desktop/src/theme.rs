@@ -25,10 +25,17 @@ pub fn resolve_theme(theme: Theme) -> DioxusTheme {
         // We cannot use dioxus_sdk_window::theme::get_theme here because
         // it requires a Dioxus runtime and cannot be called from outside
         // of Dioxus context. That's why we use dark_light crate instead.
-        Theme::Auto => match dark_light::detect() {
-            Ok(dark_light::Mode::Light) => DioxusTheme::Light,
-            Ok(dark_light::Mode::Dark) => DioxusTheme::Dark,
-            Ok(dark_light::Mode::Unspecified) | Err(_) => DioxusTheme::Light,
+        // On Linux, dark_light uses D-Bus (zbus) which requires a Tokio
+        // runtime. This function may be called before the runtime starts
+        // (e.g. from build_custom_index in main()), so catch_unwind
+        // prevents the panic and falls back to Light.
+        Theme::Auto => match std::panic::catch_unwind(dark_light::detect)
+            .ok()
+            .and_then(|r| r.ok())
+        {
+            Some(dark_light::Mode::Light) => DioxusTheme::Light,
+            Some(dark_light::Mode::Dark) => DioxusTheme::Dark,
+            Some(dark_light::Mode::Unspecified) | None => DioxusTheme::Light,
         },
         Theme::Light => DioxusTheme::Light,
         Theme::Dark => DioxusTheme::Dark,

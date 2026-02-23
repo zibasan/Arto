@@ -5,7 +5,7 @@ default_platform = "desktop"
 [bundle]
 identifier = "com.lambdalisue.Arto"
 publisher = "lambdalisue"
-icon = ["../extras/mac/arto-app.icns"]
+icon = ["../extras/mac/arto-app.icns", "assets/arto-app.png"]
 copyright = "Copyright 2025 lambdalisue"
 category = "Utility"
 short_description = "A GitHub Markdown viewer"

@@ -159,6 +159,7 @@ fn init_tracing() {
         .with(fmt_layer);
 
     // On macOS, log to Console.app via oslog
+    #[cfg(target_os = "macos")]
     let registry = registry.with(
         tracing_oslog::OsLogger::new("com.lambdalisue.Arto", "default").with_filter(silence_filter),
     );
