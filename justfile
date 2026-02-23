@@ -24,4 +24,5 @@ build: renderer::assets desktop::build
 
 open: desktop::open
 
+[macos]
 install: desktop::install

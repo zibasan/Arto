@@ -128,7 +128,10 @@ jobs:
 
   build-nix:
     needs: ["check", "test"]
-    runs-on: macos-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v6
         with:

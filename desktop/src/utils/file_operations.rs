@@ -1,4 +1,6 @@
 use std::path::Path;
+
+#[cfg(target_os = "macos")]
 use std::process::Command;
 
 /// Reveal a file in Finder (macOS) or file explorer

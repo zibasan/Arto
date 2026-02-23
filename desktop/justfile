@@ -18,15 +18,27 @@ verify: fmt check test
 clean:
   cargo clean
 
+[macos]
 build:
   @rm -rf target/dx/arto/release/macos/Arto.app/Contents/Resources/assets
   @rm -rf target/dx/arto/bundle/macos/bundle/macos/Arto.app/Contents/Resources/assets
   dx bundle --release --macos
 
+[linux]
+build:
+  @rm -rf target/dx/arto/release/linux/app/assets
+  dx bundle --release --linux --package-types deb
+
+[macos]
 open:
   ./target/dx/arto/bundle/macos/bundle/macos/Arto.app/Contents/MacOS/arto
 
+[linux]
+open:
+  ./target/dx/arto/release/linux/app/arto
+
 [confirm]
+[macos]
 install:
   @rm -rf /Applications/Arto.app
   @cp -af target/dx/arto/bundle/macos/bundle/macos/Arto.app /Applications/.
