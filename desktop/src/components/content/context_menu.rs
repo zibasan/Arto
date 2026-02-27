@@ -133,8 +133,9 @@ pub fn ContentContextMenu(props: ContentContextMenuProps) -> Element {
                     icon: Some(IconName::Copy),
                     on_click: {
                         let on_close = props.on_close;
+                        let text = props.selected_text.clone();
                         move |_| {
-                            exec_edit_command("copy");
+                            crate::utils::clipboard::copy_text(&text);
                             on_close.call(());
                         }
                     },
@@ -256,6 +257,7 @@ pub fn ContentContextMenu(props: ContentContextMenuProps) -> Element {
             // Copy As... (Text / Markdown)
             if props.has_selection {
                 CopyAsSubmenu {
+                    selected_text: props.selected_text.clone(),
                     current_file: props.current_file.clone(),
                     source_line: props.source_line,
                     on_close: props.on_close,

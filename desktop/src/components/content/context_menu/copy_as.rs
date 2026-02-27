@@ -1,4 +1,3 @@
-use dioxus::document;
 use dioxus::prelude::*;
 use std::path::PathBuf;
 
@@ -9,6 +8,7 @@ use crate::keybindings::Action;
 /// "Copy As..." submenu: Text / Markdown
 #[component]
 pub(super) fn CopyAsSubmenu(
+    selected_text: String,
     current_file: Option<PathBuf>,
     source_line: Option<u32>,
     on_close: EventHandler<()>,
@@ -24,10 +24,9 @@ pub(super) fn CopyAsSubmenu(
             ContextMenuItem {
                 label: "Text",
                 on_click: {
+                    let text = selected_text.clone();
                     move |_| {
-                        spawn(async move {
-                            let _ = document::eval("document.execCommand('copy');").await;
-                        });
+                        crate::utils::clipboard::copy_text(&text);
                         on_close.call(());
                     }
                 },
