@@ -29,6 +29,7 @@ export interface ContextMenuData {
   source_line_end: number | null;
   table_csv: string | null;
   table_tsv: string | null;
+  table_markdown: string | null;
   table_source_line: number | null;
   table_source_line_end: number | null;
 }
@@ -36,6 +37,7 @@ export interface ContextMenuData {
 interface TableData {
   csv: string;
   tsv: string;
+  markdown: string;
   sourceLine: number | null;
   sourceLineEnd: number | null;
 }
@@ -351,10 +353,12 @@ function detectTable(target: HTMLElement): TableData | null {
   return {
     csv: extractTableDelimited(table, ","),
     tsv: extractTableDelimited(table, "\t"),
+    markdown: formatTableAsMarkdown(table),
     sourceLine: range.start,
     sourceLineEnd: range.end,
   };
 }
+
 /**
  * Extract language from code element's class
  */
@@ -527,6 +531,7 @@ export function setup(sendToRust: (data: ContextMenuData) => void): void {
       source_line_end: sourceLineEnd,
       table_csv: tableData?.csv ?? null,
       table_tsv: tableData?.tsv ?? null,
+      table_markdown: tableData?.markdown ?? null,
       table_source_line: tableData?.sourceLine ?? null,
       table_source_line_end: tableData?.sourceLineEnd ?? null,
     };

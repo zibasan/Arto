@@ -288,6 +288,7 @@ pub fn ContentContextMenu(props: ContentContextMenuProps) -> Element {
                 CopyTableAsSubmenu {
                     table_tsv: props.table_tsv.clone(),
                     table_csv: props.table_csv.clone(),
+                    table_markdown: props.table_markdown.clone(),
                     current_file: props.current_file.clone(),
                     table_source_line: props.table_source_line,
                     table_source_line_end: props.table_source_line_end,

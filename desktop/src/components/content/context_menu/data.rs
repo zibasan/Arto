@@ -52,6 +52,9 @@ pub struct ContextMenuData {
     /// Table data as TSV (if right-clicked within a table)
     #[serde(default)]
     pub table_tsv: Option<String>,
+    /// Table data as Markdown (if right-clicked within a table)
+    #[serde(default)]
+    pub table_markdown: Option<String>,
     /// Table source line start (1-based)
     #[serde(default)]
     pub table_source_line: Option<u32>,
@@ -72,6 +75,7 @@ pub struct ContentContextMenuProps {
     pub source_line_end: Option<u32>,
     pub table_csv: Option<String>,
     pub table_tsv: Option<String>,
+    pub table_markdown: Option<String>,
     pub table_source_line: Option<u32>,
     pub table_source_line_end: Option<u32>,
     pub on_close: EventHandler<()>,
