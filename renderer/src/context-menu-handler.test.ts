@@ -1,7 +1,5 @@
 import { describe, test, expect } from "vitest";
-import { _internal } from "./context-menu-handler";
-
-const { extractTableDelimited, escapeDelimitedField } = _internal;
+import { extractTableDelimited, escapeDelimitedField, setup } from "./context-menu-handler";
 
 // ============================================================================
 // escapeDelimitedField
@@ -167,5 +165,50 @@ describe("extractTableDelimited", () => {
       ["太郎", "100"],
     ]);
     expect(extractTableDelimited(table, ",")).toBe("名前,値\n太郎,100");
+  });
+});
+
+// ============================================================================
+// context menu link capture
+// ============================================================================
+
+describe("setup", () => {
+  test("preserves relative href for normal links", () => {
+    document.body.innerHTML = `
+      <div class="markdown-body">
+        <p><a href="./guide/page.md">Guide</a></p>
+      </div>
+    `;
+    document.caretRangeFromPoint = () => null;
+
+    window.Arto = {
+      ...(window.Arto ?? {}),
+      contentCursor: {
+        ...(window.Arto?.contentCursor ?? {}),
+        clearCursor: () => {},
+        setFromContextTarget: () => {},
+      },
+    };
+
+    let captured: unknown = null;
+    setup((data) => {
+      captured = data;
+    });
+
+    const link = document.querySelector("a");
+    expect(link).not.toBeNull();
+
+    link?.dispatchEvent(
+      new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        clientX: 10,
+        clientY: 20,
+      }),
+    );
+
+    expect(captured).toMatchObject({
+      context: { type: "link", href: "./guide/page.md" },
+    });
   });
 });

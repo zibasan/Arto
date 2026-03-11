@@ -560,5 +560,5 @@ export function getSavedMathElement(): HTMLElement | null {
   return savedMathElement;
 }
 
-/** @internal */
-export const _internal = { extractTableDelimited, escapeDelimitedField };
+/** @internal - re-exported from table-utils for testing */
+export { extractTableDelimited, escapeDelimitedField } from "./table-utils";
