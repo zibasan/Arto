@@ -1,19 +1,19 @@
 use dioxus::prelude::*;
+use std::path::PathBuf;
 
 use super::menu_item::{ContextMenuItem, ContextMenuSubmenu};
-use crate::keybindings::dispatcher::dispatch_action;
-use crate::keybindings::Action;
 
 /// "Copy Path As..." submenu: Path / Path with Line / Path with Range
 #[component]
 pub(super) fn CopyPathAsSubmenu(
+    current_file: PathBuf,
     source_line: Option<u32>,
     source_line_end: Option<u32>,
     on_close: EventHandler<()>,
 ) -> Element {
-    let state = use_context::<crate::state::AppState>();
     let has_range =
         source_line.is_some() && source_line_end.is_some() && source_line != source_line_end;
+    let path_str = current_file.display().to_string();
 
     rsx! {
         ContextMenuSubmenu {
@@ -22,8 +22,10 @@ pub(super) fn CopyPathAsSubmenu(
             ContextMenuItem {
                 label: "Path",
                 on_click: {
+                    let path_str = path_str.clone();
                     move |_| {
-                        dispatch_action(&Action::CopyFilePath, state);
+                        crate::utils::clipboard::copy_text(&path_str);
+                        crate::keybindings::dispatcher::show_action_feedback("Copied");
                         on_close.call(());
                     }
                 },
@@ -33,8 +35,10 @@ pub(super) fn CopyPathAsSubmenu(
                 ContextMenuItem {
                     label: format!("Path with Line ({line})"),
                     on_click: {
+                        let value = format!("{path_str}:{line}");
                         move |_| {
-                            dispatch_action(&Action::CopyFilePathWithLine, state);
+                            crate::utils::clipboard::copy_text(&value);
+                            crate::keybindings::dispatcher::show_action_feedback("Copied");
                             on_close.call(());
                         }
                     },
@@ -46,8 +50,10 @@ pub(super) fn CopyPathAsSubmenu(
                     ContextMenuItem {
                         label: format!("Path with Range ({start}-{end})"),
                         on_click: {
+                            let value = format!("{path_str}:{start}-{end}");
                             move |_| {
-                                dispatch_action(&Action::CopyFilePathWithRange, state);
+                                crate::utils::clipboard::copy_text(&value);
+                                crate::keybindings::dispatcher::show_action_feedback("Copied");
                                 on_close.call(());
                             }
                         },

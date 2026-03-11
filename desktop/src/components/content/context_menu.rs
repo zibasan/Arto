@@ -142,7 +142,7 @@ pub fn ContentContextMenu(props: ContentContextMenuProps) -> Element {
                 }
             }
 
-            if let Some(_source) = copy_code_source.clone() {
+            if let Some(code_content) = copy_code_source.clone() {
                 ContextMenuItem {
                     label: "Copy Code",
                     shortcut: shortcut("clipboard.copy_code"),
@@ -150,7 +150,8 @@ pub fn ContentContextMenu(props: ContentContextMenuProps) -> Element {
                     on_click: {
                         let on_close = props.on_close;
                         move |_| {
-                            dispatch_action(&Action::CopyCode, state);
+                            crate::utils::clipboard::copy_text(&code_content);
+                            crate::keybindings::dispatcher::show_action_feedback("Copied");
                             on_close.call(());
                         }
                     },
@@ -158,7 +159,7 @@ pub fn ContentContextMenu(props: ContentContextMenuProps) -> Element {
             }
 
             // Copy Table (smart default: TSV)
-            if let Some(_tsv) = props.table_tsv.clone() {
+            if let Some(tsv) = props.table_tsv.clone() {
                 ContextMenuItem {
                     label: "Copy Table",
                     shortcut: shortcut("clipboard.copy_table_as_tsv"),
@@ -166,7 +167,8 @@ pub fn ContentContextMenu(props: ContentContextMenuProps) -> Element {
                     on_click: {
                         let on_close = props.on_close;
                         move |_| {
-                            dispatch_action(&Action::CopyTableAsTsv, state);
+                            crate::utils::clipboard::copy_text(&tsv);
+                            crate::keybindings::dispatcher::show_action_feedback("Copied");
                             on_close.call(());
                         }
                     },
@@ -174,15 +176,19 @@ pub fn ContentContextMenu(props: ContentContextMenuProps) -> Element {
             }
 
             // Copy Image (smart default: transparent background)
-            if let Some((ref _src, _)) = image_info {
+            if let Some((ref src, _)) = image_info {
                 ContextMenuItem {
                     label: "Copy Image",
                     shortcut: shortcut("clipboard.copy_image"),
                     icon: Some(IconName::Photo),
                     on_click: {
                         let on_close = props.on_close;
+                        let src = src.clone();
                         move |_| {
-                            dispatch_action(&Action::CopyImage, state);
+                            let src = src.clone();
+                            spawn(async move {
+                                crate::keybindings::dispatcher::copy_image_from_src(src, false).await;
+                            });
                             on_close.call(());
                         }
                     },
@@ -198,7 +204,7 @@ pub fn ContentContextMenu(props: ContentContextMenuProps) -> Element {
                     on_click: {
                         let on_close = props.on_close;
                         move |_| {
-                            dispatch_action(&Action::CopyImage, state);
+                            copy_special_block_image(is_mermaid, false);
                             on_close.call(());
                         }
                     },
@@ -206,7 +212,7 @@ pub fn ContentContextMenu(props: ContentContextMenuProps) -> Element {
             }
 
             // Copy Path (smart default: path / path:line / path:start-end)
-            if let Some(_value) = copy_path_value.clone() {
+            if let Some(value) = copy_path_value.clone() {
                 ContextMenuItem {
                     label: copy_path_label.clone(),
                     shortcut: shortcut(copy_path_shortcut_action_str(props.source_line, props.source_line_end)),
@@ -214,7 +220,8 @@ pub fn ContentContextMenu(props: ContentContextMenuProps) -> Element {
                     on_click: {
                         let on_close = props.on_close;
                         move |_| {
-                            dispatch_action(&copy_path_shortcut_action(props.source_line, props.source_line_end), state);
+                            crate::utils::clipboard::copy_text(&value);
+                            crate::keybindings::dispatcher::show_action_feedback("Copied");
                             on_close.call(());
                         }
                     },
@@ -260,6 +267,7 @@ pub fn ContentContextMenu(props: ContentContextMenuProps) -> Element {
                     selected_text: props.selected_text.clone(),
                     current_file: props.current_file.clone(),
                     source_line: props.source_line,
+                    source_line_end: props.source_line_end,
                     on_close: props.on_close,
                 }
             }
@@ -267,6 +275,7 @@ pub fn ContentContextMenu(props: ContentContextMenuProps) -> Element {
             // Copy Path As... (Path / Path with Line / Path with Range)
             if has_file {
                 CopyPathAsSubmenu {
+                    current_file: props.current_file.clone().unwrap(),
                     source_line: props.source_line,
                     source_line_end: props.source_line_end,
                     on_close: props.on_close,
@@ -274,8 +283,9 @@ pub fn ContentContextMenu(props: ContentContextMenuProps) -> Element {
             }
 
             // Copy Code As... (Code / Markdown / Path with Range)
-            if let Some(_code_source) = copy_code_source.clone() {
+            if let Some(code_content) = copy_code_source.clone() {
                 CopyCodeAsSubmenu {
+                    code_content,
                     current_file: props.current_file.clone(),
                     block_source_line: code_block_line,
                     block_source_line_end: code_block_line_end,
@@ -288,6 +298,7 @@ pub fn ContentContextMenu(props: ContentContextMenuProps) -> Element {
                 CopyTableAsSubmenu {
                     table_tsv: props.table_tsv.clone(),
                     table_csv: props.table_csv.clone(),
+                    table_markdown: props.table_markdown.clone(),
                     current_file: props.current_file.clone(),
                     table_source_line: props.table_source_line,
                     table_source_line_end: props.table_source_line_end,
@@ -296,8 +307,10 @@ pub fn ContentContextMenu(props: ContentContextMenuProps) -> Element {
             }
 
             // Copy Image As... (Image / Markdown / Path)
-            if is_image {
+            if let Some((ref src, ref alt)) = image_info {
                 CopyImageAsSubmenu {
+                    src: src.clone(),
+                    alt: alt.clone(),
                     on_close: props.on_close,
                 }
             }
@@ -305,6 +318,7 @@ pub fn ContentContextMenu(props: ContentContextMenuProps) -> Element {
             // Copy Image As... (Image / Image with Background) for special blocks
             if is_special_block {
                 CopySpecialBlockAsSubmenu {
+                    is_mermaid,
                     on_close: props.on_close,
                 }
             }
@@ -315,8 +329,9 @@ pub fn ContentContextMenu(props: ContentContextMenuProps) -> Element {
             }
 
             match &props.context {
-                ContentContext::Link { href: _ } => rsx! {
+                ContentContext::Link { href } => rsx! {
                     LinkContextItems {
+                        href: href.clone(),
                         on_close: props.on_close,
                     }
                 },
@@ -354,6 +369,61 @@ pub fn ContentContextMenu(props: ContentContextMenuProps) -> Element {
     }
 }
 
+/// Copy a Mermaid or Math block as an image using saved element references.
+fn copy_special_block_image(is_mermaid: bool, opaque: bool) {
+    let kind = if is_mermaid {
+        "mermaidBlock"
+    } else {
+        "mathBlock"
+    };
+    let opaque_str = if opaque { "true" } else { "false" };
+    spawn(async move {
+        let js = format!(
+            "(async () => {{ dioxus.send(await window.Arto.rasterize.{kind}({opaque_str})); }})()"
+        );
+        let mut eval = document::eval(&js);
+        if let Ok(Some(data_url)) = eval.recv::<Option<String>>().await {
+            crate::utils::clipboard::copy_image_from_data_url(&data_url);
+            crate::keybindings::dispatcher::show_action_feedback("Copied");
+        }
+    });
+}
+
+/// Copy markdown source from file using pre-captured line range and selected text.
+fn copy_markdown_source_direct(
+    file: std::path::PathBuf,
+    source_line: u32,
+    source_line_end: u32,
+    selected_text: String,
+) {
+    spawn(async move {
+        let handle = std::thread::spawn(move || {
+            let source = crate::utils::source_extract::extract_source_lines(
+                &file,
+                source_line,
+                source_line_end,
+            )?;
+            if selected_text.trim().is_empty() {
+                return Some(source);
+            }
+            Some(
+                crate::utils::source_extract::extract_source_selection(&source, &selected_text)
+                    .unwrap_or(source),
+            )
+        });
+        match handle.join() {
+            Ok(Some(md)) => {
+                crate::utils::clipboard::copy_text(&md);
+                crate::keybindings::dispatcher::show_action_feedback("Copied");
+            }
+            Ok(None) => {
+                tracing::debug!(%source_line, %source_line_end, "No source lines extracted")
+            }
+            Err(_) => tracing::debug!("Source extraction thread panicked"),
+        }
+    });
+}
+
 fn copy_path_shortcut_action_str(
     source_line: Option<u32>,
     source_line_end: Option<u32>,
@@ -362,14 +432,6 @@ fn copy_path_shortcut_action_str(
         (Some(start), Some(end)) if start != end => "clipboard.copy_file_path_with_range",
         (Some(_), _) => "clipboard.copy_file_path_with_line",
         _ => "clipboard.copy_file_path",
-    }
-}
-
-fn copy_path_shortcut_action(source_line: Option<u32>, source_line_end: Option<u32>) -> Action {
-    match (source_line, source_line_end) {
-        (Some(start), Some(end)) if start != end => Action::CopyFilePathWithRange,
-        (Some(_), _) => Action::CopyFilePathWithLine,
-        _ => Action::CopyFilePath,
     }
 }
 

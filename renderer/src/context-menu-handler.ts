@@ -3,6 +3,8 @@
  * Detects the type of element that was right-clicked and reports to Rust.
  */
 
+import { extractTableDelimited, escapeDelimitedField, formatTableAsMarkdown } from "./table-utils";
+
 export type ContentContextType =
   | { type: "general" }
   | { type: "link"; href: string }
@@ -27,6 +29,7 @@ export interface ContextMenuData {
   source_line_end: number | null;
   table_csv: string | null;
   table_tsv: string | null;
+  table_markdown: string | null;
   table_source_line: number | null;
   table_source_line_end: number | null;
 }
@@ -34,6 +37,7 @@ export interface ContextMenuData {
 interface TableData {
   csv: string;
   tsv: string;
+  markdown: string;
   sourceLine: number | null;
   sourceLineEnd: number | null;
 }
@@ -315,7 +319,7 @@ function detectContext(target: HTMLElement): DetectedContext {
     if (current.tagName === "A" && !current.classList.contains("markdown-link")) {
       const anchor = current as HTMLAnchorElement;
       return {
-        context: { type: "link", href: anchor.href },
+        context: { type: "link", href: anchor.getAttribute("href") || "" },
         sourceLine: null,
         sourceLineEnd: null,
       };
@@ -349,58 +353,10 @@ function detectTable(target: HTMLElement): TableData | null {
   return {
     csv: extractTableDelimited(table, ","),
     tsv: extractTableDelimited(table, "\t"),
+    markdown: formatTableAsMarkdown(table),
     sourceLine: range.start,
     sourceLineEnd: range.end,
   };
-}
-
-/**
- * Convert an HTML table to a delimited string (CSV or TSV).
- * Follows RFC 4180 for CSV escaping: fields containing the delimiter,
- * double quotes, or newlines are enclosed in double quotes, and internal
- * double quotes are escaped by doubling them.
- */
-function extractTableDelimited(table: HTMLTableElement, delimiter: string): string {
-  const rows: string[] = [];
-  for (const row of table.rows) {
-    const cells: string[] = [];
-    for (const cell of row.cells) {
-      const text = cell.textContent?.trim() ?? "";
-      cells.push(escapeDelimitedField(text, delimiter));
-    }
-    rows.push(cells.join(delimiter));
-  }
-  return rows.join("\n");
-}
-
-/**
- * Escape a field value for delimited output (CSV/TSV).
- *
- * In addition to RFC 4180 quoting (delimiter, quotes, newlines),
- * fields starting with `=`, `+`, `-`, or `@` are wrapped in quotes with
- * a leading tab character inside to prevent formula injection when pasted
- * into spreadsheets.
- */
-function escapeDelimitedField(value: string, delimiter: string): string {
-  // Prevent spreadsheet formula injection (CSV Injection / DDE attacks).
-  // Cells starting with these characters are interpreted as formulas by
-  // Excel, Google Sheets, and LibreOffice Calc.
-  const needsFormulaGuard =
-    value.length > 0 &&
-    (value[0] === "=" || value[0] === "+" || value[0] === "-" || value[0] === "@");
-
-  if (
-    needsFormulaGuard ||
-    value.includes(delimiter) ||
-    value.includes('"') ||
-    value.includes("\n") ||
-    value.includes("\r")
-  ) {
-    const escaped = value.replace(/"/g, '""');
-    // Tab prefix neutralizes formula interpretation while preserving the value
-    return needsFormulaGuard ? `"\t${escaped}"` : `"${escaped}"`;
-  }
-  return value;
 }
 
 /**
@@ -575,6 +531,7 @@ export function setup(sendToRust: (data: ContextMenuData) => void): void {
       source_line_end: sourceLineEnd,
       table_csv: tableData?.csv ?? null,
       table_tsv: tableData?.tsv ?? null,
+      table_markdown: tableData?.markdown ?? null,
       table_source_line: tableData?.sourceLine ?? null,
       table_source_line_end: tableData?.sourceLineEnd ?? null,
     };
@@ -608,5 +565,5 @@ export function getSavedMathElement(): HTMLElement | null {
   return savedMathElement;
 }
 
-/** @internal */
-export const _internal = { extractTableDelimited, escapeDelimitedField };
+/** @internal - re-exported from table-utils for testing */
+export { extractTableDelimited, escapeDelimitedField } from "./table-utils";

@@ -7,6 +7,8 @@
 /// Lazy rescan pattern: before each navigation, verify the current element is
 /// still in the DOM via document.contains(). If stale, rescan from .markdown-body.
 
+import { extractTableDelimited, formatTableAsMarkdown } from "./table-utils";
+
 const CURSOR_CLASS = "content-cursor-active";
 const HOLD_CLASS = "content-cursor-hold";
 
@@ -428,72 +430,5 @@ function readSourceLineRange(el: HTMLElement): { start: number | null; end: numb
   };
 }
 
-function extractTableDelimited(table: HTMLTableElement, delimiter: string): string {
-  const rows: string[] = [];
-  for (const row of table.rows) {
-    const cells: string[] = [];
-    for (const cell of row.cells) {
-      const text = cell.textContent?.trim() ?? "";
-      cells.push(escapeDelimitedField(text, delimiter));
-    }
-    rows.push(cells.join(delimiter));
-  }
-  return rows.join("\n");
-}
-
-function escapeDelimitedField(value: string, delimiter: string): string {
-  const needsFormulaGuard =
-    value.length > 0 &&
-    (value[0] === "=" || value[0] === "+" || value[0] === "-" || value[0] === "@");
-
-  if (
-    needsFormulaGuard ||
-    value.includes(delimiter) ||
-    value.includes('"') ||
-    value.includes("\n") ||
-    value.includes("\r")
-  ) {
-    const escaped = value.replace(/"/g, '""');
-    return needsFormulaGuard ? `"'${escaped}"` : `"${escaped}"`;
-  }
-  return value;
-}
-
-function formatTableAsMarkdown(table: HTMLTableElement): string {
-  if (table.rows.length === 0) return "";
-
-  // Collect all rows as arrays of cell text
-  const allRows: string[][] = [];
-  for (const row of table.rows) {
-    const cells: string[] = [];
-    for (const cell of row.cells) {
-      cells.push(cell.textContent?.trim() ?? "");
-    }
-    allRows.push(cells);
-  }
-
-  if (allRows.length === 0) return "";
-
-  // Calculate column widths for alignment
-  const colCount = Math.max(...allRows.map((r) => r.length));
-  const colWidths: number[] = Array(colCount).fill(3); // minimum 3 for "---"
-  for (const row of allRows) {
-    for (let i = 0; i < row.length; i++) {
-      colWidths[i] = Math.max(colWidths[i], row[i].length);
-    }
-  }
-
-  const formatRow = (cells: string[]): string => {
-    const padded = colWidths.map((w, i) => (cells[i] ?? "").padEnd(w));
-    return `| ${padded.join(" | ")} |`;
-  };
-
-  const lines: string[] = [];
-  lines.push(formatRow(allRows[0]));
-  lines.push(`| ${colWidths.map((w) => "-".repeat(w)).join(" | ")} |`);
-  for (let i = 1; i < allRows.length; i++) {
-    lines.push(formatRow(allRows[i]));
-  }
-
-  return lines.join("\n");
-}
+// extractTableDelimited, escapeDelimitedField, formatTableAsMarkdown
+// are imported from table-utils.ts (shared with context-menu-handler)
