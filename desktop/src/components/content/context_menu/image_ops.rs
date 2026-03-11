@@ -1,15 +1,15 @@
 use dioxus::prelude::*;
 
 use super::menu_item::{ContextMenuItem, ContextMenuSubmenu};
-use crate::keybindings::dispatcher::dispatch_action;
-use crate::keybindings::Action;
 use crate::keybindings::{shortcut_hint_for_context_action, KeyContext};
-use crate::state::AppState;
 
 /// "Copy Image As..." submenu: Image / Image with Background / Markdown / Path
 #[component]
-pub(super) fn CopyImageAsSubmenu(on_close: EventHandler<()>) -> Element {
-    let state = use_context::<AppState>();
+pub(super) fn CopyImageAsSubmenu(
+    src: String,
+    alt: Option<String>,
+    on_close: EventHandler<()>,
+) -> Element {
     let shortcut = |action| shortcut_hint_for_context_action(KeyContext::Content, action);
 
     rsx! {
@@ -19,8 +19,12 @@ pub(super) fn CopyImageAsSubmenu(on_close: EventHandler<()>) -> Element {
             ContextMenuItem {
                 label: "Image",
                 on_click: {
+                    let src = src.clone();
                     move |_| {
-                        dispatch_action(&Action::CopyImage, state);
+                        let src = src.clone();
+                        spawn(async move {
+                            crate::keybindings::dispatcher::copy_image_from_src(src, false).await;
+                        });
                         on_close.call(());
                     }
                 },
@@ -30,8 +34,12 @@ pub(super) fn CopyImageAsSubmenu(on_close: EventHandler<()>) -> Element {
                 label: "Image with Background",
                 shortcut: shortcut("clipboard.copy_image_with_background"),
                 on_click: {
+                    let src = src.clone();
                     move |_| {
-                        dispatch_action(&Action::CopyImageWithBackground, state);
+                        let src = src.clone();
+                        spawn(async move {
+                            crate::keybindings::dispatcher::copy_image_from_src(src, true).await;
+                        });
                         on_close.call(());
                     }
                 },
@@ -40,8 +48,12 @@ pub(super) fn CopyImageAsSubmenu(on_close: EventHandler<()>) -> Element {
             ContextMenuItem {
                 label: "Markdown",
                 on_click: {
+                    let alt_text = alt.as_deref().unwrap_or("").to_string();
+                    let src = src.clone();
                     move |_| {
-                        dispatch_action(&Action::CopyImageAsMarkdown, state);
+                        let md = format!("![{}]({})", alt_text, src);
+                        crate::utils::clipboard::copy_text(&md);
+                        crate::keybindings::dispatcher::show_action_feedback("Copied");
                         on_close.call(());
                     }
                 },
@@ -51,8 +63,10 @@ pub(super) fn CopyImageAsSubmenu(on_close: EventHandler<()>) -> Element {
                 label: "Path",
                 shortcut: shortcut("clipboard.copy_image_path"),
                 on_click: {
+                    let src = src.clone();
                     move |_| {
-                        dispatch_action(&Action::CopyImagePath, state);
+                        crate::utils::clipboard::copy_text(&src);
+                        crate::keybindings::dispatcher::show_action_feedback("Copied");
                         on_close.call(());
                     }
                 },
@@ -63,8 +77,7 @@ pub(super) fn CopyImageAsSubmenu(on_close: EventHandler<()>) -> Element {
 
 /// "Copy Image As..." submenu: Image / Image with Background
 #[component]
-pub(super) fn CopySpecialBlockAsSubmenu(on_close: EventHandler<()>) -> Element {
-    let state = use_context::<AppState>();
+pub(super) fn CopySpecialBlockAsSubmenu(is_mermaid: bool, on_close: EventHandler<()>) -> Element {
     let shortcut = |action| shortcut_hint_for_context_action(KeyContext::Content, action);
 
     rsx! {
@@ -75,7 +88,7 @@ pub(super) fn CopySpecialBlockAsSubmenu(on_close: EventHandler<()>) -> Element {
                 label: "Image",
                 on_click: {
                     move |_| {
-                        dispatch_action(&Action::CopyImage, state);
+                        super::copy_special_block_image(is_mermaid, false);
                         on_close.call(());
                     }
                 },
@@ -86,7 +99,7 @@ pub(super) fn CopySpecialBlockAsSubmenu(on_close: EventHandler<()>) -> Element {
                 shortcut: shortcut("clipboard.copy_image_with_background"),
                 on_click: {
                     move |_| {
-                        dispatch_action(&Action::CopyImageWithBackground, state);
+                        super::copy_special_block_image(is_mermaid, true);
                         on_close.call(());
                     }
                 },

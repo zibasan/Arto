@@ -2,8 +2,6 @@ use dioxus::prelude::*;
 use std::path::PathBuf;
 
 use super::menu_item::{ContextMenuItem, ContextMenuSubmenu};
-use crate::keybindings::dispatcher::dispatch_action;
-use crate::keybindings::Action;
 
 /// "Copy As..." submenu: Text / Markdown
 #[component]
@@ -11,9 +9,9 @@ pub(super) fn CopyAsSubmenu(
     selected_text: String,
     current_file: Option<PathBuf>,
     source_line: Option<u32>,
+    source_line_end: Option<u32>,
     on_close: EventHandler<()>,
 ) -> Element {
-    let state = use_context::<crate::state::AppState>();
     // Show "Markdown" option when file and at least start line are known.
     let has_markdown_source = current_file.is_some() && source_line.is_some();
 
@@ -36,8 +34,17 @@ pub(super) fn CopyAsSubmenu(
                 ContextMenuItem {
                     label: "Markdown",
                     on_click: {
+                        let file = current_file.clone().unwrap();
+                        let start = source_line.unwrap();
+                        let end = source_line_end.unwrap_or(start);
+                        let selected_text = selected_text.clone();
                         move |_| {
-                            dispatch_action(&Action::CopyAsMarkdown, state);
+                            super::copy_markdown_source_direct(
+                                file.clone(),
+                                start,
+                                end,
+                                selected_text.clone(),
+                            );
                             on_close.call(());
                         }
                     },

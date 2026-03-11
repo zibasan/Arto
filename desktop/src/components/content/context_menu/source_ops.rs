@@ -26,7 +26,7 @@ pub(super) fn build_path_with_range(
 }
 
 #[component]
-pub(super) fn LinkContextItems(on_close: EventHandler<()>) -> Element {
+pub(super) fn LinkContextItems(href: String, on_close: EventHandler<()>) -> Element {
     let state = use_context::<crate::state::AppState>();
     let shortcut = |action| shortcut_hint_for_context_action(KeyContext::Content, action);
 
@@ -62,9 +62,11 @@ pub(super) fn LinkContextItems(on_close: EventHandler<()>) -> Element {
             shortcut: shortcut("clipboard.copy_link_path"),
             icon: Some(IconName::Copy),
             on_click: {
+                let href = href.clone();
                 let on_close = on_close;
                 move |_| {
-                    dispatch_action(&Action::CopyLinkPath, state);
+                    crate::utils::clipboard::copy_text(&href);
+                    crate::keybindings::dispatcher::show_action_feedback("Copied");
                     on_close.call(());
                 }
             },

@@ -767,7 +767,7 @@ async fn copy_special_block_from_cursor(kind: &str, opaque: bool) {
     }
 }
 
-async fn copy_image_from_src(src: String, opaque: bool) {
+pub(crate) async fn copy_image_from_src(src: String, opaque: bool) {
     let rasterize_src = if src.starts_with("http://") || src.starts_with("https://") {
         let (tx, rx) = tokio::sync::oneshot::channel();
         std::thread::spawn({
@@ -901,7 +901,7 @@ fn copy_markdown_source(file: std::path::PathBuf) {
     });
 }
 
-fn show_action_feedback(message: &str) {
+pub(crate) fn show_action_feedback(message: &str) {
     let msg = serde_json::to_string(message).unwrap_or_else(|_| "\"Done\"".to_string());
     let js = format!("window.Arto?.feedback?.show?.({msg});");
     spawn(async move {
