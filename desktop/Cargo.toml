@@ -50,6 +50,8 @@ libc = "0.2.180"
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.3"
 objc2-app-kit = "0.3.2"
+core-graphics = "0.24"
+core-foundation = "0.10"
 tracing-oslog = "0.3.0"
 
 [dev-dependencies]

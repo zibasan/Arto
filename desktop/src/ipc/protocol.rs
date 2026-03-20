@@ -117,7 +117,7 @@ pub fn build_open_request(invocation: &crate::cli::CliInvocation) -> Option<Open
     Some(OpenRequest {
         files,
         directory,
-        behavior: Some(invocation.open_mode.to_file_open_behavior()),
+        behavior: invocation.open_mode.to_file_open_behavior(),
     })
 }
 
@@ -255,6 +255,22 @@ mod tests {
             request.behavior,
             Some(crate::config::FileOpenBehavior::CurrentScreen)
         );
+    }
+
+    #[test]
+    fn build_open_request_maps_config_mode_to_none_behavior() {
+        let temp = tempfile::tempdir().unwrap();
+        let file = temp.path().join("README.md");
+        std::fs::write(&file, "# test").unwrap();
+
+        let invocation = CliInvocation {
+            paths: vec![file],
+            directory: None,
+            open_mode: CliOpenMode::Config,
+        };
+
+        let request = build_open_request(&invocation).unwrap();
+        assert_eq!(request.behavior, None);
     }
 
     #[test]

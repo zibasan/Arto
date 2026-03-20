@@ -2,17 +2,20 @@ use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CliOpenMode {
+    /// Use the behavior from config.json (fileOpen setting).
+    Config,
     LastFocused,
     CurrentScreen,
     NewWindow,
 }
 
 impl CliOpenMode {
-    pub(crate) fn to_file_open_behavior(self) -> crate::config::FileOpenBehavior {
+    pub(crate) fn to_file_open_behavior(self) -> Option<crate::config::FileOpenBehavior> {
         match self {
-            Self::LastFocused => crate::config::FileOpenBehavior::LastFocused,
-            Self::CurrentScreen => crate::config::FileOpenBehavior::CurrentScreen,
-            Self::NewWindow => crate::config::FileOpenBehavior::NewWindow,
+            Self::Config => None,
+            Self::LastFocused => Some(crate::config::FileOpenBehavior::LastFocused),
+            Self::CurrentScreen => Some(crate::config::FileOpenBehavior::CurrentScreen),
+            Self::NewWindow => Some(crate::config::FileOpenBehavior::NewWindow),
         }
     }
 }

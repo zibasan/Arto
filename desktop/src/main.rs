@@ -37,7 +37,7 @@ enum OpenModeArg {
         \x20 arto file1.md file2.md   Open multiple files in tabs"
 )]
 struct Cli {
-    /// Open target selection mode (default: reuse last focused visible window)
+    /// Open target selection mode (default: use fileOpen setting from config.json)
     #[arg(long, value_enum)]
     open: Option<OpenModeArg>,
     /// Root directory for the file explorer sidebar
@@ -84,7 +84,7 @@ fn main() {
     let open_mode = match cli.open {
         Some(OpenModeArg::Screen) => CliOpenMode::CurrentScreen,
         Some(OpenModeArg::New) => CliOpenMode::NewWindow,
-        None => CliOpenMode::LastFocused,
+        None => CliOpenMode::Config,
     };
 
     let invocation = CliInvocation {

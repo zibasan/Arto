@@ -48,7 +48,7 @@ fn send_messages_to_primary(
         IpcMessage::from_open_request(request)
     } else {
         IpcMessage::Reopen {
-            behavior: Some(invocation.open_mode.to_file_open_behavior()),
+            behavior: invocation.open_mode.to_file_open_behavior(),
         }
     };
 

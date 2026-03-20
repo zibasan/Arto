@@ -245,7 +245,7 @@ mod tests {
     use indoc::indoc;
     use std::path::{Path, PathBuf};
     use window_selection::{
-        choose_open_target, is_window_on_display, OpenTarget, WindowSelectionInput,
+        choose_open_target, is_window_on_display, OpenTarget, WindowBounds, WindowSelectionInput,
     };
 
     // Re-import protocol types used by tests
@@ -543,20 +543,68 @@ mod tests {
     }
 
     #[test]
-    fn test_is_window_on_display_detects_overlap() {
+    fn test_is_window_on_display_fully_inside() {
         let display = (LogicalPosition::new(0, 0), LogicalSize::new(1920, 1080));
-        let window_position = LogicalPosition::new(1800, 900);
-        let window_size = LogicalSize::new(400, 300);
-
-        assert!(is_window_on_display(display, window_position, window_size));
+        let bounds = WindowBounds {
+            x: 300,
+            y: 250,
+            width: 400,
+            height: 300,
+        };
+        assert!(is_window_on_display(display, bounds));
     }
 
     #[test]
-    fn test_is_window_on_display_returns_false_without_overlap() {
+    fn test_is_window_on_display_spanning_two_monitors() {
         let display = (LogicalPosition::new(0, 0), LogicalSize::new(1920, 1080));
-        let window_position = LogicalPosition::new(1921, 0);
-        let window_size = LogicalSize::new(400, 300);
+        // Window straddles the right edge: 50% on left monitor
+        let bounds = WindowBounds {
+            x: 1720,
+            y: 200,
+            width: 400,
+            height: 300,
+        };
+        // overlap = 200*300 = 60000, window = 400*300 = 120000 → 50% > 10%
+        assert!(is_window_on_display(display, bounds));
+    }
 
-        assert!(!is_window_on_display(display, window_position, window_size));
+    #[test]
+    fn test_is_window_on_display_minor_overlap_rejected() {
+        let display = (LogicalPosition::new(0, 0), LogicalSize::new(1920, 1080));
+        // Only 20px overlap on a 400px-wide window → 5% < 10%
+        let bounds = WindowBounds {
+            x: 1900,
+            y: 200,
+            width: 400,
+            height: 300,
+        };
+        // overlap = 20*300 = 6000, window = 400*300 = 120000 → 5% < 10%
+        assert!(!is_window_on_display(display, bounds));
+    }
+
+    #[test]
+    fn test_is_window_on_display_completely_outside() {
+        let display = (LogicalPosition::new(0, 0), LogicalSize::new(1920, 1080));
+        let bounds = WindowBounds {
+            x: 1921,
+            y: 0,
+            width: 400,
+            height: 300,
+        };
+        assert!(!is_window_on_display(display, bounds));
+    }
+
+    #[test]
+    fn test_is_window_on_display_hidden_in_corner() {
+        let display = (LogicalPosition::new(0, 0), LogicalSize::new(1920, 1080));
+        // Simulates Aerospace hideInCorner: window at bottom-right with 1px overlap
+        // overlap = 1*1 = 1, window = 1265*2109 → ~0.00004% < 10%
+        let bounds = WindowBounds {
+            x: 5119,
+            y: 2132,
+            width: 1265,
+            height: 2109,
+        };
+        assert!(!is_window_on_display(display, bounds));
     }
 }
