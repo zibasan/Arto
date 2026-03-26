@@ -42,3 +42,11 @@ open:
 install:
   @rm -rf /Applications/Arto.app
   @cp -af target/dx/arto/bundle/macos/bundle/macos/Arto.app /Applications/.
+
+[windows]
+build:
+  cargo build --release
+
+[windows]
+open:
+  ./target/release/arto.exe
