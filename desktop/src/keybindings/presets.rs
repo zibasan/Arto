@@ -48,10 +48,46 @@ pub fn default_bindings() -> BindingSet {
 }
 
 fn parse_bindings_json(json: &str, name: &str) -> BindingSet {
-    let bindings: BindingSet =
+    let mut bindings: BindingSet =
         serde_json::from_str(json).unwrap_or_else(|e| panic!("{name} preset must be valid: {e}"));
+
+    // Replace Cmd with Ctrl or Meta depending on user's OS
+    normalize_primary_modifier(&mut bindings);
+
     validate_preset_bindings(name, &bindings);
     bindings
+}
+
+/// Replace "Cmd" with the primary modifier key depending on your OS.
+/// macOS: "Cmd" -> "Meta" (align with Dioxus/Tao interpretation or keep as Cmd)
+/// Windows/Linux: "Cmd" -> "Ctrl"
+fn normalize_primary_modifier(bindings: &mut BindingSet) {
+    let fields = [
+        &mut bindings.global,
+        &mut bindings.content,
+        &mut bindings.sidebar,
+        &mut bindings.quick_access,
+        &mut bindings.right_sidebar,
+        &mut bindings.search,
+    ];
+
+    for actions in fields {
+        for ka in actions {
+            // For Windows and Linux, replace "Cmd" with "Ctrl"
+            #[cfg(not(target_os = "macos"))]
+            {
+                if ka.key.contains("Cmd") {
+                    ka.key = ka.key.replace("Cmd", "Ctrl");
+                }
+            }
+
+            // For macOS, leave "Cmd" as is, or change to "Meta" if necessary
+            #[cfg(target_os = "macos")]
+            {
+                // do nothing
+            }
+        }
+    }
 }
 
 fn validate_preset_bindings(name: &str, bindings: &BindingSet) {
