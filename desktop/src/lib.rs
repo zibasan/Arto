@@ -123,7 +123,7 @@ pub fn run(invocation: cli::CliInvocation) -> RunResult {
         },
     );
     #[cfg(target_os = "macos")]
-    let config = config.with_menu(menu);
+    let config = config.with_menu(crate::menu::build_menu());
     #[cfg(not(target_os = "macos"))]
     let config = config.with_menu(None);
 
