@@ -72,20 +72,36 @@ fn normalize_primary_modifier(bindings: &mut BindingSet) {
     ];
 
     for actions in fields {
-        for ka in actions {
-            // For Windows and Linux, replace "Cmd" with "Ctrl"
-            #[cfg(not(target_os = "macos"))]
-            {
-                if ka.key.contains("Cmd") {
-                    ka.key = ka.key.replace("Cmd", "Ctrl");
+        // For Windows and Linux, replace "Cmd" with "Ctrl"
+        #[cfg(not(target_os = "macos"))]
+        {
+            let mut seen = std::collections::HashSet::new();
+            for ka in actions.iter() {
+                if !ka.key.contains("Cmd") {
+                    seen.insert(ka.key.clone());
                 }
             }
 
-            // For macOS, leave "Cmd" as is, or change to "Meta" if necessary
-            #[cfg(target_os = "macos")]
-            {
-                // do nothing
+            let mut deduped = Vec::new();
+            for mut ka in std::mem::take(actions) {
+                if ka.key.contains("Cmd") {
+                    let translated = ka.key.replace("Cmd", "Ctrl");
+                    if seen.contains(&translated) {
+                        continue;
+                    }
+                    ka.key = translated.clone();
+                    seen.insert(translated);
+                    deduped.push(ka);
+                } else {
+                    deduped.push(ka);
+                }
             }
+            *actions = deduped;
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            // do nothing
         }
     }
 }

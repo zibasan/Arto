@@ -274,7 +274,12 @@ mod tests {
     fn default_binding_cmd_n() {
         let config = default_bindings();
         let mut engine = KeybindingEngine::new(&config);
-        let result = engine.process_key(&chord("Cmd+n"), false, KeyContext::Content);
+        let key = if cfg!(target_os = "macos") {
+            "Cmd+n"
+        } else {
+            "Ctrl+n"
+        };
+        let result = engine.process_key(&chord(key), false, KeyContext::Content);
         assert_eq!(result, KeyMatchResult::Matched(Action::WindowNew));
     }
 
@@ -378,11 +383,20 @@ mod tests {
     fn user_overrides_default_cmd_n() {
         // User edits Cmd+n from window.new to tab.new in their config
         let mut custom = crate::keybindings::default_bindings();
-        let cmd_n = custom.global.iter_mut().find(|b| b.key == "Cmd+n").unwrap();
-        cmd_n.action = "tab.new".to_string();
+        let key_to_find = if cfg!(target_os = "macos") {
+            "Cmd+n"
+        } else {
+            "Ctrl+n"
+        };
+
+        custom.global.retain(|b| b.key != key_to_find);
+        custom.global.push(crate::config::KeyAction {
+            key: key_to_find.to_string(),
+            action: "tab.new".to_string(),
+        });
 
         let mut engine = KeybindingEngine::new(&custom);
-        let result = engine.process_key(&chord("Cmd+n"), false, KeyContext::Content);
+        let result = engine.process_key(&chord(key_to_find), false, KeyContext::Content);
         assert_eq!(result, KeyMatchResult::Matched(Action::TabNew));
     }
 
