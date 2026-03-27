@@ -62,20 +62,20 @@ fn parse_bindings_json(json: &str, name: &str) -> BindingSet {
 /// macOS: "Cmd" -> "Meta" (align with Dioxus/Tao interpretation or keep as Cmd)
 /// Windows/Linux: "Cmd" -> "Ctrl"
 fn normalize_primary_modifier(bindings: &mut BindingSet) {
-    let fields = [
-        &mut bindings.global,
-        &mut bindings.content,
-        &mut bindings.sidebar,
-        &mut bindings.quick_access,
-        &mut bindings.right_sidebar,
-        &mut bindings.search,
-    ];
+    #[cfg(not(target_os = "macos"))]
+    {
+        let fields = [
+            &mut bindings.global,
+            &mut bindings.content,
+            &mut bindings.sidebar,
+            &mut bindings.quick_access,
+            &mut bindings.right_sidebar,
+            &mut bindings.search,
+        ];
 
-    for actions in fields {
-        // For Windows and Linux, replace "Cmd" with "Ctrl"
-        #[cfg(not(target_os = "macos"))]
-        {
+        for actions in fields {
             let mut seen = std::collections::HashSet::new();
+            // Prioritize and protect native shortcuts (not including Cmd)
             for ka in actions.iter() {
                 if !ka.key.contains("Cmd") {
                     seen.insert(ka.key.clone());
@@ -83,9 +83,11 @@ fn normalize_primary_modifier(bindings: &mut BindingSet) {
             }
 
             let mut deduped = Vec::new();
+            // Empty old list and take out in order
             for mut ka in std::mem::take(actions) {
                 if ka.key.contains("Cmd") {
                     let translated = ka.key.replace("Cmd", "Ctrl");
+                    // Skip if the converted key (e.g. Ctrl+f) overlaps the existing key
                     if seen.contains(&translated) {
                         continue;
                     }
@@ -98,11 +100,11 @@ fn normalize_primary_modifier(bindings: &mut BindingSet) {
             }
             *actions = deduped;
         }
+    }
 
-        #[cfg(target_os = "macos")]
-        {
-            // do nothing
-        }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = bindings;
     }
 }
 
