@@ -60,6 +60,25 @@ pub fn Header() -> Element {
     // Copy feedback state
     let mut is_copied = use_signal(|| false);
 
+    let menu_overlay = {
+        #[cfg(target_os = "windows")]
+        {
+            if *is_menu_open.read() {
+                rsx! {
+                    WindowsMenu {
+                        on_close: move |_| is_menu_open.set(false),
+                    }
+                }
+            } else {
+                rsx! {}
+            }
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            rsx! {}
+        }
+    };
+
     rsx! {
         div {
             class: "header",
@@ -174,11 +193,7 @@ pub fn Header() -> Element {
                 ThemeSelector { current_theme: state.current_theme }
             }
 
-            if *is_menu_open.read() {
-                WindowsMenu {
-                    on_close: move |_| is_menu_open.set(false),
-                }
-            }
+            {menu_overlay}
 
         }
     }
