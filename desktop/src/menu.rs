@@ -1,3 +1,4 @@
+#![cfg_attr(not(target_os = "macos"), allow(dead_code))]
 use dioxus::document;
 use dioxus::prelude::{spawn, ReadableExt, WritableExt};
 use dioxus_desktop::muda::accelerator::Accelerator;

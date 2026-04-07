@@ -59,7 +59,7 @@ fn parse_bindings_json(json: &str, name: &str) -> BindingSet {
 }
 
 /// Replace "Cmd" with the primary modifier key depending on your OS.
-/// macOS: "Cmd" -> "Meta" (align with Dioxus/Tao interpretation or keep as Cmd)
+/// macOS: leave "Cmd" as-is (keep Cmd in keybindings)
 /// Windows/Linux: "Cmd" -> "Ctrl"
 fn normalize_primary_modifier(bindings: &mut BindingSet) {
     #[cfg(not(target_os = "macos"))]
